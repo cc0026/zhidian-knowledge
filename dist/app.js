@@ -576,6 +576,7 @@
   }));
   $$('[data-toggle-related]').forEach(button => button.addEventListener('click', () => {
     renderRelatedCards();
+    closeModal($('#detail-modal'));
     openModal($('#related-modal'));
   }));
   $('#open-related-graph').addEventListener('click', () => {

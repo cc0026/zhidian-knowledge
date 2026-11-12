@@ -134,3 +134,37 @@
 @media (prefers-reduced-motion: reduce) {
   .flashcard-face { animation: none; }
 }
+
+/* Portrait 4:3 cards: the long edge is vertical. */
+.card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.knowledge-card {
+  aspect-ratio: 3 / 4;
+  min-height: 0;
+}
+
+.flashcard {
+  width: min(100%, 390px);
+  aspect-ratio: 3 / 4;
+  margin: 18px auto 20px;
+}
+
+.flashcard-face {
+  height: 100%;
+  min-height: 0;
+}
+
+@media (max-width: 1100px) {
+  .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 850px) {
+  .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .card-grid { grid-template-columns: 1fr; }
+}

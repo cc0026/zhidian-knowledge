@@ -1,5 +1,6 @@
 (() => {
   const STORE_KEY = 'zhidian.knowledge.v1';
+  const TAG_STORE_KEY = 'zhidian.knowledge.tags.v1';
   const masteryLabels = { fuzzy: '模糊', partial: '部分掌握', known: '已掌握' };
   const seedCards = [
     { id: 'seed-bayes', front: '贝叶斯定理在回答什么问题？', back: '它描述如何根据新证据更新一个假设的可信度。\n\nP(A|B) = P(B|A) × P(A) / P(B)', tag: '统计学', mastery: 'partial', links: ['seed-base-rate'], updatedAt: Date.now() - 1000 * 60 * 28 },
@@ -13,6 +14,7 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
   let cards = loadCards();
+  let customTags = loadTags();
   let view = 'all';
   let selectedTag = '';
   let selectedMastery = 'all';
@@ -33,8 +35,16 @@
     } catch (error) { console.warn('Could not read local knowledge base', error); }
     return structuredClone(seedCards);
   }
+  function loadTags() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(TAG_STORE_KEY) || '[]');
+      if (Array.isArray(parsed)) return [...new Set(parsed.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean))];
+    } catch (error) { console.warn('Could not read custom tags', error); }
+    return [];
+  }
   function saveCards() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
-  function tags() { return [...new Set(cards.map(card => card.tag.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans')); }
+  function saveTags() { localStorage.setItem(TAG_STORE_KEY, JSON.stringify(customTags)); }
+  function tags() { return [...new Set([...customTags, ...cards.map(card => card.tag.trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'zh-Hans')); }
   function connectedCount(card) { return new Set((card.links || []).filter(id => cards.some(item => item.id === id))).size; }
   function relativeDate(time) {
     const minutes = Math.max(1, Math.floor((Date.now() - time) / 60000));
@@ -116,7 +126,7 @@
   function syncNav() { $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view && !selectedTag)); }
   function render() { renderStats(); updateHeading(); renderCards(); syncNav(); }
   function openModal(element) { element.hidden = false; document.body.style.overflow = 'hidden'; }
-  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#editor-modal').hidden) document.body.style.overflow = ''; }
+  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden) document.body.style.overflow = ''; }
   function openDetail(id) {
     const card = cards.find(item => item.id === id);
     if (!card) return;
@@ -154,7 +164,7 @@
     $('#editor-title').textContent = card ? '编辑知识卡片' : '新建知识卡片';
     $('#front-input').value = card?.front || '';
     $('#back-input').value = card?.back || '';
-    $('#tag-input').value = card?.tag || '';
+    $('#tag-input').value = card?.tag || (id ? '' : selectedTag);
     $('#mastery-input').value = card?.mastery || 'fuzzy';
     $('#relation-search').value = '';
     $('#form-error').textContent = '';
@@ -225,7 +235,7 @@
     saveCards(); closeModal($('#detail-modal')); render(); notify('卡片已删除');
   }
   function exportData() {
-    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards, tags: customTags }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `zhidian-knowledge-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
     notify('知识库备份已导出');
@@ -235,6 +245,7 @@
       const parsed = JSON.parse(await file.text());
       const incoming = Array.isArray(parsed) ? parsed : parsed.cards;
       if (!Array.isArray(incoming) || !incoming.every(card => card && typeof card.front === 'string' && typeof card.back === 'string')) throw new Error('格式不正确');
+      const importedTags = Array.isArray(parsed?.tags) ? parsed.tags.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean) : [];
       const ids = new Set();
       cards = incoming.map(card => {
         const id = card.id && !ids.has(card.id) ? card.id : `card-${crypto.randomUUID()}`;
@@ -243,7 +254,8 @@
       });
       const validIds = new Set(cards.map(card => card.id));
       cards.forEach(card => { card.links = [...new Set(card.links.filter(id => validIds.has(id) && id !== card.id))]; });
-      saveCards(); render(); notify(`已导入 ${cards.length} 张卡片`);
+      customTags = [...new Set([...importedTags, ...cards.map(card => card.tag.trim()).filter(Boolean)])];
+      saveCards(); saveTags(); render(); notify(`已导入 ${cards.length} 张卡片`);
     } catch (error) { notify('无法导入：请选一个知点 JSON 备份文件'); }
     $('#import-file').value = '';
   }
@@ -261,9 +273,27 @@
   $$('.close-modal,[data-close]').forEach(button => button.addEventListener('click', () => { closeModal(button.closest('.modal-backdrop')); if (button.closest('#editor-modal')) editorCardId = null; }));
   $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) { closeModal(backdrop); if (backdrop.id === 'editor-modal') editorCardId = null; } }));
   $('#sort-button').addEventListener('click', () => { newestFirst = !newestFirst; $('#sort-button').innerHTML = `<span>☷</span> ${newestFirst ? '最近更新' : '按名称'} <span class="sort-chevron">⌄</span>`; renderCards(); });
-  function createTaggedCard() { openEditor(); $('#tag-input').focus(); }
-  $('#add-tag').addEventListener('click', createTaggedCard);
-  $('#manage-tags').addEventListener('click', createTaggedCard);
+  function openTagCreator() {
+    $('#tag-name-input').value = '';
+    $('#tag-form-error').textContent = '';
+    openModal($('#tag-modal'));
+    setTimeout(() => $('#tag-name-input').focus(), 60);
+  }
+  function saveTag(event) {
+    event.preventDefault();
+    const tag = $('#tag-name-input').value.trim().replace(/^#/, '');
+    if (!tag) { $('#tag-form-error').textContent = '请输入标签名称。'; return; }
+    if (tag.includes(',')) { $('#tag-form-error').textContent = '标签名称不能包含逗号。'; return; }
+    if (tags().includes(tag)) { $('#tag-form-error').textContent = '这个标签已经存在。'; return; }
+    customTags.push(tag);
+    saveTags();
+    closeModal($('#tag-modal'));
+    render();
+    notify(`标签「${tag}」已创建`);
+  }
+  $('#manage-tags').addEventListener('click', openTagCreator);
+  $('#add-tag').addEventListener('click', openTagCreator);
+  $('#tag-form').addEventListener('submit', saveTag);
   $('#export-data').addEventListener('click', exportData);
   $('#import-data').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', event => { if (event.target.files?.[0]) importData(event.target.files[0]); });

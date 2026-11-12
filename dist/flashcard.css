@@ -29,6 +29,10 @@
   width: min(100%, 680px);
 }
 
+.tag-modal {
+  width: min(100%, 440px);
+}
+
 .flashcard {
   position: relative;
   margin: 18px 0 20px;

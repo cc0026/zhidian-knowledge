@@ -993,7 +993,7 @@ body { font-size: var(--type-body); }
   transition: background .15s, border-color .15s;
 }
 .related-toggle:hover,
-.related-toggle[aria-expanded="true"] { border-color: #cbd7c4; background: #edf2e9; color: #456344; }
+.related-toggle:focus-visible { border-color: #cbd7c4; background: #edf2e9; color: #456344; }
 .related-toggle-count { color: #9a9e91; font: 10px var(--mono); }
 .flashcard-shell .flashcard-bottom-row .related-toggle { flex: 0 0 auto; }
 @media (max-width: 640px) {
@@ -1086,4 +1086,65 @@ body { font-size: var(--type-body); }
     height: 32px;
     font-size: 22px;
   }
+}
+
+
+/* Related cards open in their own full list instead of extending the card modal. */
+.detail-modal { overflow: hidden; }
+.flashcard-shell { margin-bottom: 0; }
+.related-backdrop { z-index: 35; padding: 28px; }
+.graph-backdrop { z-index: 45; }
+.related-modal {
+  width: min(100%, 820px);
+  max-height: 88vh;
+  padding: 25px 28px 27px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd1c5 transparent;
+}
+.related-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 17px;
+  border-bottom: 1px solid #e8e7df;
+  margin-bottom: 16px;
+}
+.related-modal-heading h2 { display: flex; align-items: center; gap: 9px; margin: 6px 0 5px; font-size: 21px; }
+.related-modal-count { color: #9ca093; font: 13px var(--mono); }
+.related-modal-heading p { margin: 0; color: #85897e; font-size: 12px; }
+.related-modal-heading p strong { color: #525d4e; font-weight: 500; }
+.related-modal-actions { display: flex; align-items: center; gap: 7px; }
+.related-card-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.related-result-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  min-height: 86px;
+  padding: 12px 14px;
+  border: 1px solid #e6e6de;
+  border-radius: 7px;
+  background: #fffefa;
+  text-align: left;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.related-result-card:hover { border-color: #c6d3c0; background: #fcfdf9; transform: translateY(-1px); }
+.related-result-meta { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.related-result-card > strong { min-width: 0; overflow: hidden; color: #41493e; font-size: 13px; font-weight: 600; line-height: 1.5; text-overflow: ellipsis; }
+.related-result-open { color: #8a9880; font-size: 10px; white-space: nowrap; }
+.related-empty { padding: 28px 16px; border: 1px dashed #e0e2d9; border-radius: 7px; color: #8e9287; font-size: 12px; text-align: center; }
+@media (max-width: 640px) {
+  .related-backdrop { padding: 10px; }
+  .related-modal { max-height: 92vh; padding: 20px 16px; }
+  .related-modal-heading { gap: 8px; }
+  .related-modal-heading h2 { font-size: 18px; }
+  .related-modal-heading p { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .related-modal-actions { gap: 2px; }
+  .related-modal-actions .graph-open-button { padding: 6px 7px; font-size: 11px; }
+  .related-modal-actions .close-modal { width: 28px; flex: 0 0 28px; }
+  .related-card-list { grid-template-columns: 1fr; gap: 7px; }
+  .related-result-card { min-height: 78px; padding: 10px 11px; }
 }

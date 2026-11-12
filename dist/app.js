@@ -1,6 +1,7 @@
 (() => {
   const STORE_KEY = 'zhidian.knowledge.v1';
   const TAG_STORE_KEY = 'zhidian.knowledge.tags.v1';
+  const PUBLISHED_CARDS_URL = './cards/cards.json';
   const masteryLabels = { fuzzy: '不认识', partial: '模糊', known: '已掌握' };
   const seedCards = [
     { id: 'seed-bayes', front: '贝叶斯定理在回答什么问题？', back: '它描述如何根据新证据更新一个假设的可信度。\n\nP(A|B) = P(B|A) × P(A) / P(B)', tag: '统计学', mastery: 'partial', links: ['seed-base-rate'], updatedAt: Date.now() - 1000 * 60 * 28 },
@@ -22,7 +23,6 @@
   let searchQuery = '';
   let activeCardId = null;
   let activeRelatedCards = [];
-  let showAllConnections = false;
   let editorCardId = null;
   let selectedLinks = new Set();
   let newestFirst = true;
@@ -45,8 +45,74 @@
     } catch (error) { console.warn('Could not read custom tags', error); }
     return [];
   }
-  function saveCards() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
-  function saveTags() { localStorage.setItem(TAG_STORE_KEY, JSON.stringify(customTags)); }
+  function setStorageNote(message) { $('#storage-note').textContent = message; }
+  function saveCards() {
+    localStorage.setItem(STORE_KEY, JSON.stringify(cards));
+    setStorageNote('本机有更改 · 导出并上传后同步到其他设备');
+  }
+  function saveTags() {
+    localStorage.setItem(TAG_STORE_KEY, JSON.stringify(customTags));
+    setStorageNote('本机有更改 · 导出并上传后同步到其他设备');
+  }
+  function normalizeCardDataset(payload) {
+    const incoming = Array.isArray(payload) ? payload : payload?.cards;
+    if (!Array.isArray(incoming) || !incoming.every(card => card && typeof card.front === 'string' && typeof card.back === 'string')) throw new Error('卡片文件格式不正确');
+    const importedTags = Array.isArray(payload?.tags) ? payload.tags.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean) : [];
+    const ids = new Set();
+    const normalizedCards = incoming.map(card => {
+      const id = card.id && !ids.has(card.id) ? card.id : `card-${crypto.randomUUID()}`;
+      ids.add(id);
+      return { id, front: card.front, back: card.back, tag: typeof card.tag === 'string' ? card.tag : '', mastery: masteryLabels[card.mastery] ? card.mastery : 'fuzzy', updatedAt: Number(card.updatedAt) || Date.now(), links: Array.isArray(card.links) ? card.links : [] };
+    });
+    const validIds = new Set(normalizedCards.map(card => card.id));
+    normalizedCards.forEach(card => { card.links = [...new Set(card.links.filter(id => validIds.has(id) && id !== card.id))]; });
+    return {
+      cards: normalizedCards,
+      tags: [...new Set([...importedTags, ...normalizedCards.map(card => card.tag.trim()).filter(Boolean)])]
+    };
+  }
+  async function fetchPublishedDataset() {
+    const response = await fetch(`${PUBLISHED_CARDS_URL}?v=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`读取 GitHub 卡片失败（${response.status}）`);
+    return normalizeCardDataset(await response.json());
+  }
+  async function initializePublishedCards() {
+    if (localStorage.getItem(STORE_KEY)) {
+      setStorageNote('本机卡片 · 导出并上传后同步到其他设备');
+      return;
+    }
+    try {
+      const dataset = await fetchPublishedDataset();
+      if (localStorage.getItem(STORE_KEY)) return;
+      cards = dataset.cards;
+      customTags = dataset.tags;
+      saveCards(); saveTags();
+      setStorageNote('已载入 GitHub 卡片');
+      render();
+    } catch (error) {
+      setStorageNote('暂时无法载入 GitHub 卡片');
+      console.warn('Could not load published knowledge cards', error);
+    }
+  }
+  async function loadPublishedCards() {
+    const hasLocalData = localStorage.getItem(STORE_KEY) || localStorage.getItem(TAG_STORE_KEY);
+    if (hasLocalData && !confirm('载入 GitHub 版本会替换此浏览器里的卡片和标签。若要保留本机更改，请先导出。继续载入吗？')) return;
+    const button = $('#load-published');
+    button.disabled = true;
+    try {
+      const dataset = await fetchPublishedDataset();
+      cards = dataset.cards;
+      customTags = dataset.tags;
+      saveCards(); saveTags();
+      setStorageNote('已载入 GitHub 版本');
+      render();
+      notify(`已从 GitHub 载入 ${cards.length} 张卡片`);
+    } catch (error) {
+      setStorageNote('载入失败 · 本机卡片未更改');
+      notify('无法读取 GitHub 卡片，请检查网络后重试');
+      console.warn('Could not load published knowledge cards', error);
+    } finally { button.disabled = false; }
+  }
   function tags() {
     const all = new Set();
     [...customTags, ...cards.map(card => card.tag.trim()).filter(Boolean)].forEach(tag => {
@@ -232,7 +298,7 @@
     renderCards(); syncNav();
   }
   function openModal(element) { element.hidden = false; document.body.style.overflow = 'hidden'; }
-  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden && $('#graph-modal').hidden) document.body.style.overflow = ''; }
+  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#related-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden && $('#graph-modal').hidden) document.body.style.overflow = ''; }
   function renderAnswerMarkup(source = '') {
     const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
     const blocks = [];
@@ -307,17 +373,20 @@
   }
   function renderConnections(card) {
     activeRelatedCards = cards.filter(item => (card.links || []).includes(item.id));
-    $('#connection-count').textContent = activeRelatedCards.length;
     $$('.related-toggle-count').forEach(count => { count.textContent = activeRelatedCards.length; });
-    $('#open-local-graph').hidden = activeRelatedCards.length === 0;
-    const visible = showAllConnections ? activeRelatedCards : activeRelatedCards.slice(0, 4);
-    const list = $('#detail-connections');
-    list.classList.toggle('expanded', showAllConnections);
-    list.innerHTML = activeRelatedCards.length ? visible.map(item => `<button class="connection-item" data-related-id="${escapeHtml(item.id)}"><span class="relation-arrow">↗</span><span class="connection-title">${escapeHtml(item.front)}</span><span class="connection-tag">${escapeHtml(item.tag || '未分类')}</span></button>`).join('') : '<div class="no-connection-copy">还没有连接的卡片，可在编辑中添加知识线索。</div>';
-    const more = $('#toggle-connections');
-    more.hidden = activeRelatedCards.length <= 4;
-    more.textContent = showAllConnections ? '收起关联卡片' : `查看其余 ${activeRelatedCards.length - 4} 条`;
-    $$('.connection-item', list).forEach(button => button.addEventListener('click', () => openDetail(button.dataset.relatedId)));
+    $('#related-current-title').textContent = card.front;
+    $('#related-modal-count').textContent = activeRelatedCards.length;
+    $('#open-related-graph').hidden = activeRelatedCards.length === 0;
+  }
+  function renderRelatedCards() {
+    const list = $('#related-card-list');
+    list.innerHTML = activeRelatedCards.map(item => `<button class="related-result-card" data-related-id="${escapeHtml(item.id)}" type="button"><span class="related-result-meta"><span class="card-tag"><span class="card-tag-dot"></span>${escapeHtml(item.tag || '未分类')}</span><span class="mastery-pill mastery-${item.mastery}">${masteryLabels[item.mastery]}</span></span><strong>${escapeHtml(item.front)}</strong><span class="related-result-open">打开卡片 ↗</span></button>`).join('');
+    list.hidden = activeRelatedCards.length === 0;
+    $('#related-empty').hidden = activeRelatedCards.length > 0;
+    $$('.related-result-card', list).forEach(button => button.addEventListener('click', () => {
+      closeModal($('#related-modal'));
+      openDetail(button.dataset.relatedId);
+    }));
   }
   function graphLabelLines(value, maxChars) {
     const chars = Array.from(String(value || ''));
@@ -354,7 +423,7 @@
     $('#graph-note').hidden = related.length <= limit;
     $('#graph-note').textContent = related.length > limit ? `图中显示前 ${limit} 个直接关联；完整列表可在详情中展开。` : '';
     $$('.graph-node[data-graph-card-id]', graph).forEach(node => {
-      const open = () => { closeModal($('#graph-modal')); openDetail(node.dataset.graphCardId); };
+      const open = () => { closeModal($('#graph-modal')); if (!$('#related-modal').hidden) closeModal($('#related-modal')); openDetail(node.dataset.graphCardId); };
       node.addEventListener('click', open);
       node.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
     });
@@ -379,9 +448,6 @@
     $('#flashcard-front-face').hidden = false;
     $('#flashcard-back-face').hidden = true;
     $('#detail-flashcard').dataset.face = 'front';
-    showAllConnections = false;
-    $('#detail-connections-wrap').hidden = true;
-    $$('[data-toggle-related]').forEach(button => button.setAttribute('aria-expanded', 'false'));
     renderConnections(card);
     openModal($('#detail-modal'));
   }
@@ -476,25 +542,17 @@
   function exportData() {
     const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards, tags: customTags }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.download = `zhidian-knowledge-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
-    notify('知识库备份已导出');
+    const link = document.createElement('a'); link.href = url; link.download = 'cards.json'; link.click(); URL.revokeObjectURL(url);
+    setStorageNote('已导出 cards.json · 上传到 dist/cards/ 发布');
+    notify('cards.json 已导出');
   }
   async function importData(file) {
     try {
-      const parsed = JSON.parse(await file.text());
-      const incoming = Array.isArray(parsed) ? parsed : parsed.cards;
-      if (!Array.isArray(incoming) || !incoming.every(card => card && typeof card.front === 'string' && typeof card.back === 'string')) throw new Error('格式不正确');
-      const importedTags = Array.isArray(parsed?.tags) ? parsed.tags.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean) : [];
-      const ids = new Set();
-      cards = incoming.map(card => {
-        const id = card.id && !ids.has(card.id) ? card.id : `card-${crypto.randomUUID()}`;
-        ids.add(id);
-        return { id, front: card.front, back: card.back, tag: typeof card.tag === 'string' ? card.tag : '', mastery: masteryLabels[card.mastery] ? card.mastery : 'fuzzy', updatedAt: Number(card.updatedAt) || Date.now(), links: Array.isArray(card.links) ? card.links : [] };
-      });
-      const validIds = new Set(cards.map(card => card.id));
-      cards.forEach(card => { card.links = [...new Set(card.links.filter(id => validIds.has(id) && id !== card.id))]; });
-      customTags = [...new Set([...importedTags, ...cards.map(card => card.tag.trim()).filter(Boolean)])];
+      const dataset = normalizeCardDataset(JSON.parse(await file.text()));
+      cards = dataset.cards;
+      customTags = dataset.tags;
       saveCards(); saveTags(); render(); notify(`已导入 ${cards.length} 张卡片`);
+      setStorageNote('已导入本机 · 导出并上传后同步到其他设备');
     } catch (error) { notify('无法导入：请选一个知点 JSON 备份文件'); }
     $('#import-file').value = '';
   }
@@ -517,16 +575,10 @@
     saveCards(); syncMasteryOptions(card.mastery); render(); notify('掌握程度已更新');
   }));
   $$('[data-toggle-related]').forEach(button => button.addEventListener('click', () => {
-    const panel = $('#detail-connections-wrap');
-    panel.hidden = !panel.hidden;
-    $$('[data-toggle-related]').forEach(toggle => toggle.setAttribute('aria-expanded', String(!panel.hidden)));
+    renderRelatedCards();
+    openModal($('#related-modal'));
   }));
-  $('#toggle-connections').addEventListener('click', () => {
-    showAllConnections = !showAllConnections;
-    const card = cards.find(item => item.id === activeCardId);
-    if (card) renderConnections(card);
-  });
-  $('#open-local-graph').addEventListener('click', () => {
+  $('#open-related-graph').addEventListener('click', () => {
     const card = cards.find(item => item.id === activeCardId);
     if (!card || !activeRelatedCards.length) return;
     renderLocalGraph(card, activeRelatedCards);
@@ -566,6 +618,7 @@
   $('#manage-tags').addEventListener('click', openTagCreator);
   $('#add-tag').addEventListener('click', openTagCreator);
   $('#tag-form').addEventListener('submit', saveTag);
+  $('#load-published').addEventListener('click', loadPublishedCards);
   $('#export-data').addEventListener('click', exportData);
   $('#import-data').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', event => { if (event.target.files?.[0]) importData(event.target.files[0]); });
@@ -575,9 +628,11 @@
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !$('#editor-modal').hidden) $('#card-form').requestSubmit();
     if (event.key === 'Escape') {
       if (!$('#graph-modal').hidden) closeModal($('#graph-modal'));
+      else if (!$('#related-modal').hidden) closeModal($('#related-modal'));
       else $$('.modal-backdrop').forEach(modal => { if (!modal.hidden) closeModal(modal); });
       $('#sidebar').classList.remove('open');
     }
   });
   render();
+  initializePublishedCards();
 })();

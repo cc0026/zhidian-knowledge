@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f5f0" />
+    <meta name="description" content="把零散知识做成卡片，连接起来，随时搜索和回想。" />
+    <title>知点 · 个人知识库</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#" aria-label="知点首页">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span>知点<span class="brand-dot">.</span></span>
+        </a>
+        <div class="workspace-label">PERSONAL KNOWLEDGE</div>
+        <nav class="primary-nav" aria-label="主导航">
+          <button class="nav-item active" data-view="all"><span class="nav-icon icon-grid">▦</span><span>所有卡片</span><span class="nav-count" id="nav-total">0</span></button>
+          <button class="nav-item" data-view="recent"><span class="nav-icon">↺</span><span>最近编辑</span></button>
+          <button class="nav-item" data-view="fuzzy"><span class="nav-icon icon-spark">✳</span><span>还不熟悉</span><span class="nav-count muted-count" id="nav-fuzzy">0</span></button>
+        </nav>
+        <div class="sidebar-section">
+          <div class="section-heading"><span>标签</span><button class="icon-button tiny" id="manage-tags" title="管理标签" aria-label="管理标签">＋</button></div>
+          <div class="tag-list" id="tag-list"></div>
+          <button class="add-tag-link" id="add-tag"><span>＋</span> 新建标签</button>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="local-note"><span class="local-dot"></span><span>仅保存在此浏览器</span></div>
+          <button class="sidebar-action" id="export-data"><span>↥</span> 导出知识库</button>
+          <button class="sidebar-action" id="import-data"><span>↧</span> 导入备份</button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
+          <div class="sidebar-footer"><span class="footer-sigil">知</span><span>一点一点，连成所知</span></div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button class="mobile-menu icon-button" id="mobile-menu" aria-label="打开导航">☰</button>
+          <div class="breadcrumb"><span>知识空间</span><span class="crumb-slash">/</span><strong id="breadcrumb-current">所有卡片</strong></div>
+          <div class="top-actions">
+            <label class="search-box" for="search-input"><span class="search-icon">⌕</span><input id="search-input" type="search" placeholder="搜索概念、解释…" autocomplete="off" /><kbd>⌘ K</kbd></label>
+            <button class="avatar" title="个人知识库">知</button>
+          </div>
+        </header>
+
+        <div class="content-wrap">
+          <section class="welcome-row">
+            <div>
+              <div class="eyebrow"><span class="eyebrow-line"></span> YOUR KNOWLEDGE, CONNECTED</div>
+              <h1 id="page-title">把记得的，<em>连接起来。</em></h1>
+              <p class="page-subtitle">知识不是孤岛。写下来，连起来，随时找回来。</p>
+            </div>
+            <button class="button primary-button" id="new-card"><span class="plus-sign">＋</span> 新建卡片</button>
+          </section>
+
+          <section class="overview-strip" aria-label="知识库概览">
+            <div class="overview-intro"><span class="overview-icon">⌘</span><span>你的知识空间</span></div>
+            <div class="overview-stat"><span class="stat-number" id="stat-cards">0</span><span class="stat-label">张卡片</span></div>
+            <div class="overview-stat"><span class="stat-number" id="stat-links">0</span><span class="stat-label">个连接</span></div>
+            <div class="overview-stat"><span class="stat-number" id="stat-tags">0</span><span class="stat-label">个主题</span></div>
+            <div class="overview-ornament" aria-hidden="true"><span>↗</span><span>·</span><span>↙</span></div>
+          </section>
+
+          <section class="library-section">
+            <div class="library-heading">
+              <div><h2 id="library-title">所有卡片</h2><span class="result-count" id="result-count">0 个知识点</span></div>
+              <div class="library-controls">
+                <div class="filter-tabs" role="tablist" aria-label="掌握程度筛选">
+                  <button class="filter-tab selected" data-mastery="all">全部</button>
+                  <button class="filter-tab" data-mastery="fuzzy">模糊</button>
+                  <button class="filter-tab" data-mastery="partial">部分掌握</button>
+                  <button class="filter-tab" data-mastery="known">已掌握</button>
+                </div>
+                <button class="sort-button" id="sort-button" title="切换排序"><span>☷</span> 最近更新 <span class="sort-chevron">⌄</span></button>
+              </div>
+            </div>
+            <div class="active-filter-row" id="active-filter-row" hidden></div>
+            <div class="card-grid" id="card-grid"></div>
+            <div class="empty-state" id="empty-state" hidden>
+              <div class="empty-illustration"><span class="empty-circle circle-one"></span><span class="empty-circle circle-two"></span><span class="empty-card">?</span><span class="empty-connector"></span></div>
+              <h3 id="empty-title">这里还没有知识卡片</h3>
+              <p id="empty-copy">从一个最近想起的概念开始，把它记下来。</p>
+              <button class="button secondary-button" id="empty-create">创建第一张卡片 <span>↗</span></button>
+            </div>
+          </section>
+          <footer class="main-footer"><span>知点 · 个人知识空间</span><span>慢慢积累，随时回想 <span class="footer-star">✳</span></span></footer>
+        </div>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="detail-modal" hidden>
+      <section class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+        <div class="modal-topline"><span class="modal-kicker">KNOWLEDGE CARD</span><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
+        <div class="detail-meta"><span class="tag-pill" id="detail-tag"></span><span class="mastery-pill" id="detail-mastery"></span></div>
+        <div class="detail-front"><div class="field-label">正面 · 提示</div><h2 id="detail-title"></h2></div>
+        <div class="detail-divider"><span>翻开看看</span></div>
+        <div class="detail-back"><div class="field-label">反面 · 解释</div><p id="detail-answer"></p></div>
+        <div class="detail-connections" id="detail-connections-wrap"><div class="connection-heading"><span>相关知识</span><span id="connection-count">0</span></div><div class="connection-list" id="detail-connections"></div></div>
+        <div class="detail-actions"><label class="mastery-select-label">掌握程度<select id="detail-mastery-select"><option value="fuzzy">模糊</option><option value="partial">部分掌握</option><option value="known">已掌握</option></select></label><div><button class="text-button" id="edit-card">编辑</button><button class="text-button danger-text" id="delete-card">删除</button></div></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="editor-modal" hidden>
+      <section class="modal editor-modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+        <div class="modal-topline"><div><span class="modal-kicker">MAKE A CONNECTION</span><h2 id="editor-title">新建知识卡片</h2></div><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
+        <form id="card-form">
+          <label class="form-field"><span>正面 <small>提示 / 概念</small></span><textarea id="front-input" rows="2" placeholder="例如：什么是贝叶斯定理？" required></textarea></label>
+          <label class="form-field"><span>反面 <small>解释 / 公式 / 例子</small></span><textarea id="back-input" rows="5" placeholder="写下你希望自己能想起来的内容…" required></textarea></label>
+          <div class="form-row">
+            <label class="form-field"><span>主题标签 <small>一个标签</small></span><input id="tag-input" list="known-tags" placeholder="例如：统计学" /><datalist id="known-tags"></datalist></label>
+            <label class="form-field"><span>掌握程度</span><select id="mastery-input"><option value="fuzzy">模糊</option><option value="partial">部分掌握</option><option value="known">已掌握</option></select></label>
+          </div>
+          <div class="form-field relation-field"><span>连接到其他卡片 <small>可多选</small></span><div class="relation-search"><span>⌕</span><input id="relation-search" placeholder="搜索卡片…" /></div><div class="relation-picker" id="relation-picker"></div><div class="selected-relations" id="selected-relations"></div></div>
+          <div class="form-error" id="form-error" role="alert"></div>
+          <div class="modal-footer"><span class="save-hint"><kbd>⌘</kbd> + <kbd>↵</kbd> 保存卡片</span><div><button type="button" class="button cancel-button" data-close>取消</button><button type="submit" class="button primary-button">保存卡片 <span>↗</span></button></div></div>
+        </form>
+      </section>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

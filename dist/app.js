@@ -1,7 +1,7 @@
 (() => {
   const STORE_KEY = 'zhidian.knowledge.v1';
   const TAG_STORE_KEY = 'zhidian.knowledge.tags.v1';
-  const masteryLabels = { fuzzy: '模糊', partial: '部分掌握', known: '已掌握' };
+  const masteryLabels = { fuzzy: '不认识', partial: '模糊', known: '已掌握' };
   const seedCards = [
     { id: 'seed-bayes', front: '贝叶斯定理在回答什么问题？', back: '它描述如何根据新证据更新一个假设的可信度。\n\nP(A|B) = P(B|A) × P(A) / P(B)', tag: '统计学', mastery: 'partial', links: ['seed-base-rate'], updatedAt: Date.now() - 1000 * 60 * 28 },
     { id: 'seed-base-rate', front: '什么是基率忽视？', back: '人在判断某个事件时，过度关注具体线索，却低估它在总体中的基础发生概率。\n\n诊断测试中的假阳性，是理解基率作用的经典例子。', tag: '认知科学', mastery: 'fuzzy', links: ['seed-bayes', 'seed-working-memory'], updatedAt: Date.now() - 1000 * 60 * 60 * 4 },
@@ -21,6 +21,8 @@
   let selectedMastery = 'all';
   let searchQuery = '';
   let activeCardId = null;
+  let activeRelatedCards = [];
+  let showAllConnections = false;
   let editorCardId = null;
   let selectedLinks = new Set();
   let newestFirst = true;
@@ -63,11 +65,18 @@
     if (days < 7) return `${days} 天前`;
     return new Date(time).toLocaleDateString('zh-Hans', { month: 'numeric', day: 'numeric' });
   }
+  function hasAnyConnection(card) {
+    return connectedCount(card) > 0 || cards.some(other => other.id !== card.id && (other.links || []).includes(card.id));
+  }
   function getVisibleCards() {
     const query = searchQuery.trim().toLocaleLowerCase();
     let list = cards.filter(card => {
       if (view === 'fuzzy' && card.mastery === 'known') return false;
       if (view === 'recent' && Date.now() - card.updatedAt > 1000 * 60 * 60 * 24 * 30) return false;
+      if (view === 'untagged' && card.tag.trim()) return false;
+      if (view === 'tagged' && !card.tag.trim()) return false;
+      if (view === 'unlinked' && hasAnyConnection(card)) return false;
+      if (view === 'linked' && !hasAnyConnection(card)) return false;
       if (selectedTag && card.tag !== selectedTag && !card.tag.startsWith(`${selectedTag}/`)) return false;
       if (selectedMastery !== 'all' && card.mastery !== selectedMastery) return false;
       if (query && !`${card.front}\n${card.back}\n${card.tag}`.toLocaleLowerCase().includes(query)) return false;
@@ -76,13 +85,72 @@
     return list.sort((a, b) => newestFirst ? b.updatedAt - a.updatedAt : a.front.localeCompare(b.front, 'zh-Hans'));
   }
   function renderStats() {
+    const untagged = cards.filter(card => !card.tag.trim()).length;
+    const unlinked = cards.filter(card => !hasAnyConnection(card)).length;
     $('#nav-total').textContent = cards.length;
     $('#nav-fuzzy').textContent = cards.filter(card => card.mastery !== 'known').length;
     $('#stat-cards').textContent = cards.length;
-    $('#stat-links').textContent = cards.reduce((sum, card) => sum + connectedCount(card), 0) / 2;
+    $('#stat-untagged').textContent = untagged;
+    $('#stat-unlinked').textContent = unlinked;
     $('#stat-tags').textContent = tags().length;
+    $('#gap-untagged').textContent = untagged;
+    $('#gap-unlinked').textContent = unlinked;
     renderTags();
     renderTagOptions();
+  }
+  function renderStatistics() {
+    const total = cards.length || 1;
+    const tagged = cards.filter(card => card.tag.trim()).length;
+    const connected = cards.filter(hasAnyConnection).length;
+    const mastery = ['known', 'partial', 'fuzzy'].map(key => ({ key, label: masteryLabels[key], count: cards.filter(card => card.mastery === key).length }));
+    const summary = [
+      { value: cards.length, label: '知识卡片', note: '持续积累的概念', action: 'all' },
+      { value: `${Math.round(tagged / total * 100)}%`, label: '已分类', note: `${tagged} 张已有标签`, action: 'tagged' },
+      { value: connected, label: '已连接卡片', note: '至少关联一张卡片', action: 'linked' },
+      { value: tags().length, label: '标签主题', note: '包含多级子标签', action: '' }
+    ];
+    $('#stats-summary').innerHTML = summary.map(item => `<button class="stats-summary-card" ${item.action ? `data-open-view="${item.action}"` : 'data-open-tags'} type="button"><span class="summary-value">${item.value}</span><span class="summary-label">${item.label}</span><small>${item.note}</small></button>`).join('');
+    $$('[data-open-view]', $('#stats-summary')).forEach(button => button.addEventListener('click', () => openView(button.dataset.openView)));
+    $$('[data-open-tags]', $('#stats-summary')).forEach(button => button.addEventListener('click', () => { openView('all'); $('#manage-tags').focus(); }));
+
+    const months = [];
+    const now = new Date();
+    for (let offset = 5; offset >= 0; offset -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      months.push({ year: date.getFullYear(), month: date.getMonth(), label: date.toLocaleDateString('zh-Hans', { month: 'short' }), count: 0 });
+    }
+    cards.forEach(card => {
+      const date = new Date(Number(card.updatedAt) || 0);
+      const bucket = months.find(month => month.year === date.getFullYear() && month.month === date.getMonth());
+      if (bucket) bucket.count += 1;
+    });
+    const maxActivity = Math.max(1, ...months.map(month => month.count));
+    $('#activity-chart').innerHTML = months.map(month => `<div class="activity-column" aria-label="${month.year}年${month.month + 1}月，${month.count}张卡片"><span class="activity-value">${month.count || ''}</span><div class="activity-track"><i style="height:${Math.max(4, month.count / maxActivity * 100)}%"></i></div><span class="activity-month">${month.label}</span></div>`).join('');
+
+    $('#mastery-chart').innerHTML = mastery.map(item => `<button class="mastery-stat-row" data-master-filter="${item.key}" type="button"><span class="mastery-stat-label"><i class="mastery-dot mastery-dot-${item.key}"></i>${item.label}</span><span class="mastery-stat-track"><i class="mastery-stat-fill mastery-fill-${item.key}" style="width:${item.count / total * 100}%"></i></span><strong>${item.count}</strong></button>`).join('');
+
+    const exactTagCounts = tags().map(tag => ({ tag, count: cards.filter(card => card.tag === tag).length })).filter(item => item.count).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'zh-Hans')).slice(0, 6);
+    const maxTagCount = Math.max(1, ...exactTagCounts.map(item => item.count));
+    $('#tag-stats-list').innerHTML = exactTagCounts.length ? exactTagCounts.map(item => `<button class="tag-stat-row" data-stat-tag="${escapeHtml(item.tag)}" type="button"><span class="tag-stat-name" title="${escapeHtml(item.tag)}">${escapeHtml(item.tag)}</span><span class="tag-stat-track"><i style="width:${item.count / maxTagCount * 100}%"></i></span><strong>${item.count}</strong></button>`).join('') : '<p class="stats-empty">添加标签后，这里会显示常用主题。</p>';
+
+    $$('[data-master-filter]', $('#mastery-chart')).forEach(button => button.addEventListener('click', () => {
+      selectedMastery = button.dataset.masterFilter;
+      $$('.filter-tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.mastery === selectedMastery));
+      view = 'all'; selectedTag = ''; render();
+    }));
+    $$('[data-stat-tag]', $('#tag-stats-list')).forEach(button => button.addEventListener('click', () => {
+      selectedTag = button.dataset.statTag; selectedMastery = 'all';
+      $$('.filter-tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.mastery === 'all'));
+      view = 'all'; render();
+    }));
+  }
+  function openView(nextView) {
+    view = nextView;
+    selectedTag = '';
+    selectedMastery = 'all';
+    $$('.filter-tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.mastery === 'all'));
+    render();
+    if (innerWidth <= 640) $('#sidebar').classList.remove('open');
   }
   function renderTags() {
     const host = $('#tag-list');
@@ -113,10 +181,10 @@
   }
   function renderTagOptions() { $('#known-tags').innerHTML = tags().map(tag => `<option value="${escapeHtml(tag)}"></option>`).join(''); }
   function updateHeading() {
-    const title = selectedTag ? selectedTag : view === 'recent' ? '最近编辑' : view === 'fuzzy' ? '还不熟悉' : searchQuery ? '搜索结果' : '所有卡片';
+    const title = selectedTag ? selectedTag : view === 'stats' ? '统计' : view === 'untagged' ? '未分类' : view === 'tagged' ? '已分类' : view === 'unlinked' ? '无关联' : view === 'linked' ? '已连接' : view === 'recent' ? '最近编辑' : view === 'fuzzy' ? '还不熟悉' : searchQuery ? '搜索结果' : '所有卡片';
     $('#breadcrumb-current').textContent = title;
     $('#library-title').textContent = title;
-    $('#page-title').innerHTML = selectedTag ? `关于 <em>${escapeHtml(selectedTag)}</em>` : view === 'recent' ? '最近整理的，<em>继续连起来。</em>' : view === 'fuzzy' ? '还有些模糊，<em>慢慢想起来。</em>' : searchQuery ? '找到你的，<em>知识线索。</em>' : '把记得的，<em>连接起来。</em>';
+    $('#page-title').innerHTML = selectedTag ? `关于 <em>${escapeHtml(selectedTag)}</em>` : view === 'stats' ? '你的知识库，<em>正在生长。</em>' : view === 'untagged' ? '还没归类的，<em>知识线索。</em>' : view === 'tagged' ? '有标签的，<em>知识脉络。</em>' : view === 'unlinked' ? '尚未连接的，<em>独立想法。</em>' : view === 'linked' ? '已有联系的，<em>知识网络。</em>' : view === 'recent' ? '最近整理的，<em>继续连起来。</em>' : view === 'fuzzy' ? '还有些模糊，<em>慢慢想起来。</em>' : searchQuery ? '找到你的，<em>知识线索。</em>' : '把记得的，<em>连接起来。</em>';
     const chips = [];
     if (selectedTag) chips.push(`<span class="active-chip">标签：${escapeHtml(selectedTag)} <button data-clear="tag" aria-label="清除标签">×</button></span>`);
     if (selectedMastery !== 'all') chips.push(`<span class="active-chip">掌握程度：${masteryLabels[selectedMastery]} <button data-clear="mastery" aria-label="清除掌握程度">×</button></span>`);
@@ -153,26 +221,168 @@
     $('#empty-create').hidden = !noData;
   }
   function syncNav() { $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view && !selectedTag)); }
-  function render() { renderStats(); updateHeading(); renderCards(); syncNav(); }
+  function render() {
+    renderStats(); updateHeading();
+    const statsOpen = view === 'stats';
+    $('#stats-view').hidden = !statsOpen;
+    $('#library-section').hidden = statsOpen;
+    $('#overview-strip').hidden = statsOpen;
+    $('#welcome-row').hidden = statsOpen;
+    if (statsOpen) renderStatistics();
+    renderCards(); syncNav();
+  }
   function openModal(element) { element.hidden = false; document.body.style.overflow = 'hidden'; }
-  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden) document.body.style.overflow = ''; }
+  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden && $('#graph-modal').hidden) document.body.style.overflow = ''; }
+  function renderAnswerMarkup(source = '') {
+    const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
+    const blocks = [];
+    let paragraph = [];
+    let codeLines = null;
+    let fence = '';
+    let language = '';
+    const renderInline = text => text.split(/(`[^`\n]*`)/g).map(part => {
+      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
+      return escapeHtml(part).replace(/\n/g, '<br>');
+    }).join('');
+    const flushParagraph = () => {
+      if (paragraph.length) blocks.push(`<p>${renderInline(paragraph.join('\n'))}</p>`);
+      paragraph = [];
+    };
+    const flushCode = () => {
+      const className = language ? ` class="language-${escapeHtml(language)}"` : '';
+      blocks.push(`<pre><code${className}>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+      codeLines = null;
+      fence = '';
+      language = '';
+    };
+    lines.forEach(line => {
+      if (codeLines) {
+        const closing = line.trim().match(/^(`+|~+)\s*$/);
+        if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) flushCode();
+        else codeLines.push(line);
+        return;
+      }
+      const opening = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+      if (opening) {
+        flushParagraph();
+        fence = opening[1];
+        language = opening[2].trim().split(/\s+/, 1)[0]?.replace(/[^\w+-]/g, '') || '';
+        codeLines = [];
+        return;
+      }
+      if (!line.trim()) flushParagraph();
+      else paragraph.push(line);
+    });
+    flushParagraph();
+    if (codeLines) flushCode();
+    return blocks.join('\n');
+  }
+  function renderMarkdownAnswer(source = '') {
+    if (!window.marked?.parse || !window.DOMPurify?.sanitize) return renderAnswerMarkup(source);
+    const formulas = [];
+    const marker = `ZHIDIANMATH${crypto.randomUUID().replaceAll('-', '')}`;
+    const markdown = String(source).replace(/\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^\n$]+?\$/g, formula => {
+      const placeholder = `${marker}${formulas.length}END`;
+      formulas.push({ placeholder, formula });
+      return placeholder;
+    });
+    let html = window.DOMPurify.sanitize(window.marked.parse(markdown, { gfm: true, breaks: true }));
+    formulas.forEach(({ placeholder, formula }) => {
+      html = html.replaceAll(placeholder, escapeHtml(formula));
+    });
+    return html;
+  }
+  function renderAnswerMath(element) {
+    if (typeof window.renderMathInElement !== 'function') return;
+    window.renderMathInElement(element, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '\\[', right: '\\]', display: true },
+        { left: '$', right: '$', display: false },
+        { left: '\\(', right: '\\)', display: false }
+      ],
+      ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'option'],
+      throwOnError: false
+    });
+  }
+  function renderConnections(card) {
+    activeRelatedCards = cards.filter(item => (card.links || []).includes(item.id));
+    $('#connection-count').textContent = activeRelatedCards.length;
+    $$('.related-toggle-count').forEach(count => { count.textContent = activeRelatedCards.length; });
+    $('#open-local-graph').hidden = activeRelatedCards.length === 0;
+    const visible = showAllConnections ? activeRelatedCards : activeRelatedCards.slice(0, 4);
+    const list = $('#detail-connections');
+    list.classList.toggle('expanded', showAllConnections);
+    list.innerHTML = activeRelatedCards.length ? visible.map(item => `<button class="connection-item" data-related-id="${escapeHtml(item.id)}"><span class="relation-arrow">↗</span><span class="connection-title">${escapeHtml(item.front)}</span><span class="connection-tag">${escapeHtml(item.tag || '未分类')}</span></button>`).join('') : '<div class="no-connection-copy">还没有连接的卡片，可在编辑中添加知识线索。</div>';
+    const more = $('#toggle-connections');
+    more.hidden = activeRelatedCards.length <= 4;
+    more.textContent = showAllConnections ? '收起关联卡片' : `查看其余 ${activeRelatedCards.length - 4} 条`;
+    $$('.connection-item', list).forEach(button => button.addEventListener('click', () => openDetail(button.dataset.relatedId)));
+  }
+  function graphLabelLines(value, maxChars) {
+    const chars = Array.from(String(value || ''));
+    const shown = chars.slice(0, maxChars * 2);
+    if (chars.length > maxChars * 2) shown[shown.length - 1] = '…';
+    return [shown.slice(0, maxChars).join(''), shown.slice(maxChars).join('')].filter(Boolean);
+  }
+  function renderLocalGraph(card, related) {
+    const limit = 10;
+    const nodes = related.slice(0, limit);
+    const center = { x: 320, y: 210 };
+    const radius = 148;
+    const positions = nodes.map((item, index) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(nodes.length, 1);
+      return { card: item, x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) };
+    });
+    const edges = positions.map(node => `<line class="graph-edge" x1="${center.x}" y1="${center.y}" x2="${node.x}" y2="${node.y}" />`);
+    for (let left = 0; left < positions.length; left += 1) {
+      for (let right = left + 1; right < positions.length; right += 1) {
+        const first = positions[left].card;
+        const second = positions[right].card;
+        if ((first.links || []).includes(second.id) || (second.links || []).includes(first.id)) {
+          edges.push(`<line class="graph-edge graph-edge-related" x1="${positions[left].x}" y1="${positions[left].y}" x2="${positions[right].x}" y2="${positions[right].y}" />`);
+        }
+      }
+    }
+    const drawNode = (item, x, y, isCurrent = false) => {
+      const lines = graphLabelLines(item.front, isCurrent ? 9 : 6);
+      const text = lines.map((line, index) => `<tspan x="${x}" dy="${lines.length > 1 && index === 0 ? '-4' : index === 1 ? '15' : '0'}">${escapeHtml(line)}</tspan>`).join('');
+      return `<g class="graph-node${isCurrent ? ' graph-node-current' : ''}" ${isCurrent ? '' : `tabindex="0" role="button" data-graph-card-id="${escapeHtml(item.id)}"`} aria-label="${isCurrent ? '当前卡片：' : '打开卡片：'}${escapeHtml(item.front)}"><title>${escapeHtml(item.front)}</title><circle cx="${x}" cy="${y}" r="${isCurrent ? 56 : 42}" /><text x="${x}" y="${y + (lines.length > 1 ? -3 : 4)}" text-anchor="middle">${text}</text></g>`;
+    };
+    const graph = $('#local-graph');
+    graph.innerHTML = `<svg viewBox="0 0 640 420" role="img" aria-label="当前卡片与直接关联卡片的关系图">${edges.join('')}${positions.map(node => drawNode(node.card, node.x, node.y)).join('')}${drawNode(card, center.x, center.y, true)}</svg>`;
+    $('#graph-note').hidden = related.length <= limit;
+    $('#graph-note').textContent = related.length > limit ? `图中显示前 ${limit} 个直接关联；完整列表可在详情中展开。` : '';
+    $$('.graph-node[data-graph-card-id]', graph).forEach(node => {
+      const open = () => { closeModal($('#graph-modal')); openDetail(node.dataset.graphCardId); };
+      node.addEventListener('click', open);
+      node.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+    });
+  }
+  function syncMasteryOptions(value) {
+    $$('[data-mastery-option]').forEach(button => {
+      const selected = button.dataset.masteryOption === value;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+  }
   function openDetail(id) {
     const card = cards.find(item => item.id === id);
     if (!card) return;
     activeCardId = id;
     $('#detail-tag').textContent = card.tag || '未分类';
-    $('#detail-mastery').textContent = masteryLabels[card.mastery];
-    $('#detail-mastery').className = `mastery-pill mastery-${card.mastery}`;
+    syncMasteryOptions(card.mastery);
     $('#detail-title').textContent = card.front;
-    $('#detail-answer').textContent = card.back;
+    const answer = $('#detail-answer');
+    answer.innerHTML = renderMarkdownAnswer(card.back);
+    renderAnswerMath(answer);
     $('#flashcard-front-face').hidden = false;
     $('#flashcard-back-face').hidden = true;
     $('#detail-flashcard').dataset.face = 'front';
-    $('#detail-mastery-select').value = card.mastery;
-    const related = cards.filter(item => (card.links || []).includes(item.id));
-    $('#connection-count').textContent = related.length;
-    $('#detail-connections').innerHTML = related.length ? related.map(item => `<button class="connection-item" data-related-id="${escapeHtml(item.id)}"><span class="relation-arrow">↗</span><span>${escapeHtml(item.front)}</span><span class="connection-tag">${escapeHtml(item.tag || '未分类')}</span></button>`).join('') : '<div class="no-connection-copy">还没有连接的卡片，从编辑中添加一条知识线索。</div>';
-    $$('.connection-item', $('#detail-connections')).forEach(button => button.addEventListener('click', () => openDetail(button.dataset.relatedId)));
+    showAllConnections = false;
+    $('#detail-connections-wrap').hidden = true;
+    $$('[data-toggle-related]').forEach(button => button.setAttribute('aria-expanded', 'false'));
+    renderConnections(card);
     openModal($('#detail-modal'));
   }
   $('#flip-card').addEventListener('click', () => {
@@ -289,14 +499,43 @@
     $('#import-file').value = '';
   }
 
-  $$('.nav-item').forEach(button => button.addEventListener('click', () => { view = button.dataset.view; selectedTag = ''; render(); if (innerWidth <= 640) $('#sidebar').classList.remove('open'); }));
+  $$('.nav-item').forEach(button => button.addEventListener('click', () => openView(button.dataset.view)));
+  $$('[data-open-stats]').forEach(button => button.addEventListener('click', () => openView('stats')));
+  $$('[data-open-view]').forEach(button => button.addEventListener('click', () => openView(button.dataset.openView)));
+  $$('[data-open-tags]').forEach(button => button.addEventListener('click', () => { openView('all'); $('#manage-tags').focus(); }));
+  $('#search-input').addEventListener('input', event => { searchQuery = event.target.value; if (searchQuery.trim() && view === 'stats') view = 'all'; render(); });
   $$('.filter-tab').forEach(button => button.addEventListener('click', () => { selectedMastery = button.dataset.mastery; $$('.filter-tab').forEach(tab => tab.classList.toggle('selected', tab === button)); render(); }));
-  $('#search-input').addEventListener('input', event => { searchQuery = event.target.value; render(); });
   $('#new-card').addEventListener('click', () => openEditor());
+  $('#stats-new-card').addEventListener('click', () => openEditor());
   $('#empty-create').addEventListener('click', () => openEditor());
-  $('#edit-card').addEventListener('click', () => { const id = activeCardId; closeModal($('#detail-modal')); openEditor(id); });
-  $('#delete-card').addEventListener('click', deleteActiveCard);
-  $('#detail-mastery-select').addEventListener('change', event => { const card = cards.find(item => item.id === activeCardId); if (!card) return; card.mastery = event.target.value; card.updatedAt = Date.now(); saveCards(); render(); openDetail(card.id); notify('掌握程度已更新'); });
+  $$('[data-card-action="edit"]').forEach(button => button.addEventListener('click', () => { const id = activeCardId; closeModal($('#detail-modal')); openEditor(id); }));
+  $$('[data-card-action="delete"]').forEach(button => button.addEventListener('click', deleteActiveCard));
+  $$('[data-mastery-option]').forEach(button => button.addEventListener('click', () => {
+    const card = cards.find(item => item.id === activeCardId);
+    if (!card || card.mastery === button.dataset.masteryOption) return;
+    card.mastery = button.dataset.masteryOption; card.updatedAt = Date.now();
+    saveCards(); syncMasteryOptions(card.mastery); render(); notify('掌握程度已更新');
+  }));
+  $$('[data-toggle-related]').forEach(button => button.addEventListener('click', () => {
+    const panel = $('#detail-connections-wrap');
+    panel.hidden = !panel.hidden;
+    $$('[data-toggle-related]').forEach(toggle => toggle.setAttribute('aria-expanded', String(!panel.hidden)));
+  }));
+  $('#toggle-connections').addEventListener('click', () => {
+    showAllConnections = !showAllConnections;
+    const card = cards.find(item => item.id === activeCardId);
+    if (card) renderConnections(card);
+  });
+  $('#open-local-graph').addEventListener('click', () => {
+    const card = cards.find(item => item.id === activeCardId);
+    if (!card || !activeRelatedCards.length) return;
+    renderLocalGraph(card, activeRelatedCards);
+    openModal($('#graph-modal'));
+    requestAnimationFrame(() => {
+      const graph = $('#local-graph');
+      graph.scrollLeft = Math.max(0, (graph.scrollWidth - graph.clientWidth) / 2);
+    });
+  });
   $('#card-form').addEventListener('submit', saveEditor);
   $('#relation-search').addEventListener('input', renderRelationPicker);
   $$('.close-modal,[data-close]').forEach(button => button.addEventListener('click', () => { closeModal(button.closest('.modal-backdrop')); if (button.closest('#editor-modal')) editorCardId = null; }));
@@ -334,7 +573,11 @@
   document.addEventListener('keydown', event => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#search-input').focus(); }
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !$('#editor-modal').hidden) $('#card-form').requestSubmit();
-    if (event.key === 'Escape') { $$('.modal-backdrop').forEach(modal => { if (!modal.hidden) closeModal(modal); }); $('#sidebar').classList.remove('open'); }
+    if (event.key === 'Escape') {
+      if (!$('#graph-modal').hidden) closeModal($('#graph-modal'));
+      else $$('.modal-backdrop').forEach(modal => { if (!modal.hidden) closeModal(modal); });
+      $('#sidebar').classList.remove('open');
+    }
   });
   render();
 })();

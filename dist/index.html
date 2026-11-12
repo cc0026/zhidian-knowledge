@@ -9,8 +9,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.css" integrity="sha384-WwGtaC6ywCHxA5cstpj/3+xIZvTez8dq2IcBQaXRkenHZ7FVVq1ZROtURwfbtTlG" crossorigin="anonymous" />
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./flashcard.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/marked@18.2.0/lib/marked.umd.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js" integrity="sha384-a1WQdjRj162i159OYq041X6I4K8NenkrI09LlPmiHg0YOb7CR+wJOraXwK9abpnE" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -25,6 +30,7 @@
           <button class="nav-item active" data-view="all"><span class="nav-icon icon-grid">▦</span><span>所有卡片</span><span class="nav-count" id="nav-total">0</span></button>
           <button class="nav-item" data-view="recent"><span class="nav-icon">↺</span><span>最近编辑</span></button>
           <button class="nav-item" data-view="fuzzy"><span class="nav-icon icon-spark">✳</span><span>还不熟悉</span><span class="nav-count muted-count" id="nav-fuzzy">0</span></button>
+          <button class="nav-item" data-view="stats"><span class="nav-icon">▤</span><span>统计</span></button>
         </nav>
         <div class="sidebar-section">
           <div class="section-heading"><span>标签</span><button class="icon-button tiny" id="manage-tags" title="新建标签" aria-label="新建标签">＋</button></div>
@@ -45,13 +51,13 @@
           <button class="mobile-menu icon-button" id="mobile-menu" aria-label="打开导航">☰</button>
           <div class="breadcrumb"><span>知识空间</span><span class="crumb-slash">/</span><strong id="breadcrumb-current">所有卡片</strong></div>
           <div class="top-actions">
-            <label class="search-box" for="search-input"><span class="search-icon">⌕</span><input id="search-input" type="search" placeholder="搜索概念、解释…" autocomplete="off" /><kbd>⌘ K</kbd></label>
+            <label class="search-box" for="search-input"><span class="search-icon">⌕</span><input id="search-input" type="search" placeholder="搜索概念、解释、标签…" autocomplete="off" /><kbd>⌘ K</kbd></label>
             <button class="avatar" title="个人知识库">知</button>
           </div>
         </header>
 
         <div class="content-wrap">
-          <section class="welcome-row">
+          <section class="welcome-row" id="welcome-row">
             <div>
               <div class="eyebrow"><span class="eyebrow-line"></span> YOUR KNOWLEDGE, CONNECTED</div>
               <h1 id="page-title">把记得的，<em>连接起来。</em></h1>
@@ -60,23 +66,35 @@
             <button class="button primary-button" id="new-card"><span class="plus-sign">＋</span> 新建卡片</button>
           </section>
 
-          <section class="overview-strip" aria-label="知识库概览">
+          <section class="overview-strip" id="overview-strip" aria-label="知识库概览">
             <div class="overview-intro"><span class="overview-icon">⌘</span><span>你的知识空间</span></div>
-            <div class="overview-stat"><span class="stat-number" id="stat-cards">0</span><span class="stat-label">张卡片</span></div>
-            <div class="overview-stat"><span class="stat-number" id="stat-links">0</span><span class="stat-label">个连接</span></div>
-            <div class="overview-stat"><span class="stat-number" id="stat-tags">0</span><span class="stat-label">个主题</span></div>
-            <div class="overview-ornament" aria-hidden="true"><span>↗</span><span>·</span><span>↙</span></div>
+            <button class="overview-stat" data-open-stats type="button"><span class="stat-number" id="stat-cards">0</span><span class="stat-label">张卡片</span></button>
+            <button class="overview-stat" data-open-view="untagged" type="button"><span class="stat-number" id="stat-untagged">0</span><span class="stat-label">未分类</span></button>
+            <button class="overview-stat" data-open-view="unlinked" type="button"><span class="stat-number" id="stat-unlinked">0</span><span class="stat-label">无关联</span></button>
+            <button class="overview-stat" data-open-stats type="button"><span class="stat-number" id="stat-tags">0</span><span class="stat-label">个主题</span></button>
+            <button class="overview-open" data-open-stats type="button">查看统计 <span>↗</span></button>
           </section>
 
-          <section class="library-section">
+          <section class="stats-view" id="stats-view" aria-labelledby="stats-title" hidden>
+            <div class="stats-heading"><div><h2 id="stats-title">知识库统计</h2><p>看看知识如何积累、分类和连接。</p></div><button class="button primary-button" id="stats-new-card"><span class="plus-sign">＋</span> 新建卡片</button></div>
+            <div class="stats-summary-grid" id="stats-summary"></div>
+            <div class="stats-panels">
+              <section class="stats-panel activity-panel"><div class="stats-panel-heading"><div><h3>最近 6 个月的编辑</h3><p>按卡片最后更新时间统计</p></div><span class="chart-symbol">⌁</span></div><div class="activity-chart" id="activity-chart"></div></section>
+              <section class="stats-panel mastery-panel"><div class="stats-panel-heading"><div><h3>掌握程度</h3><p>点击任一状态筛选卡片</p></div><span class="chart-symbol">◉</span></div><div class="mastery-chart" id="mastery-chart"></div></section>
+              <section class="stats-panel tag-stats-panel"><div class="stats-panel-heading"><div><h3>常用标签</h3><p>按卡片实际使用的标签统计</p></div><span class="chart-symbol">#</span></div><div class="tag-stats-list" id="tag-stats-list"></div></section>
+              <section class="stats-panel gaps-panel"><div class="stats-panel-heading"><div><h3>可以继续整理</h3><p>点击数字查看对应卡片</p></div><span class="chart-symbol">↗</span></div><div class="gap-stat-list"><button class="gap-stat" data-open-view="untagged" type="button"><span><strong id="gap-untagged">0</strong><small>张卡片还没有标签</small></span><span>查看 →</span></button><button class="gap-stat" data-open-view="unlinked" type="button"><span><strong id="gap-unlinked">0</strong><small>张卡片还没有关联</small></span><span>查看 →</span></button></div></section>
+            </div>
+          </section>
+
+          <section class="library-section" id="library-section">
             <div class="library-heading">
               <div><h2 id="library-title">所有卡片</h2><span class="result-count" id="result-count">0 个知识点</span></div>
               <div class="library-controls">
                 <div class="filter-tabs" role="tablist" aria-label="掌握程度筛选">
                   <button class="filter-tab selected" data-mastery="all">全部</button>
-                  <button class="filter-tab" data-mastery="fuzzy">模糊</button>
-                  <button class="filter-tab" data-mastery="partial">部分掌握</button>
                   <button class="filter-tab" data-mastery="known">已掌握</button>
+                  <button class="filter-tab" data-mastery="partial">模糊</button>
+                  <button class="filter-tab" data-mastery="fuzzy">不认识</button>
                 </div>
                 <button class="sort-button" id="sort-button" title="切换排序"><span>☷</span> 最近更新 <span class="sort-chevron">⌄</span></button>
               </div>
@@ -97,22 +115,48 @@
 
     <div class="modal-backdrop" id="detail-modal" hidden>
       <section class="modal detail-modal" role="dialog" aria-modal="true" aria-label="知识卡片详情">
-        <div class="modal-topline"><span class="modal-kicker">KNOWLEDGE CARD</span><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
-        <div class="detail-meta"><span class="tag-pill" id="detail-tag"></span><span class="mastery-pill" id="detail-mastery"></span></div>
-        <div class="flashcard" id="detail-flashcard" data-face="front">
-          <div class="flashcard-face flashcard-front" id="flashcard-front-face">
-            <div class="flashcard-face-label"><span>正面 · 提示</span><span>01 / 02</span></div>
-            <h2 id="detail-title"></h2>
-            <button class="flip-card-button" id="flip-card" type="button"><span>翻开答案</span><span aria-hidden="true">↻</span></button>
-          </div>
-          <div class="flashcard-face flashcard-back" id="flashcard-back-face" hidden>
-            <div class="flashcard-face-label"><span>反面 · 解释</span><span>02 / 02</span></div>
-            <p id="detail-answer"></p>
-            <button class="flip-card-button" id="flip-card-back" type="button"><span>翻回正面</span><span aria-hidden="true">↺</span></button>
+        <div class="flashcard-shell">
+          <div class="flashcard" id="detail-flashcard" data-face="front">
+            <div class="flashcard-face flashcard-front" id="flashcard-front-face">
+              <div class="flashcard-face-label">
+                <span class="face-label-main"><span>正面 · 提示</span><span class="tag-pill" id="detail-tag"></span></span>
+                <span class="detail-card-actions"><button class="text-button" data-card-action="edit">编辑</button><button class="text-button danger-text" data-card-action="delete">删除</button><button class="icon-button tiny close-modal" data-close aria-label="关闭卡片">×</button></span>
+              </div>
+              <h2 id="detail-title"></h2>
+              <div class="flashcard-bottom-row">
+                <div class="mastery-options" role="group" aria-label="掌握程度"><button class="mastery-option" data-mastery-option="known" type="button">已掌握</button><button class="mastery-option" data-mastery-option="partial" type="button">模糊</button><button class="mastery-option" data-mastery-option="fuzzy" type="button">不认识</button></div>
+                <button class="related-toggle" data-toggle-related type="button" aria-expanded="false"><span>相关</span><span class="related-toggle-count">0</span></button>
+                <button class="flip-card-button" id="flip-card" type="button"><span>翻开答案</span><span aria-hidden="true">↻</span></button>
+              </div>
+            </div>
+            <div class="flashcard-face flashcard-back" id="flashcard-back-face" hidden>
+              <div class="flashcard-face-label">
+                <span class="face-label-main">反面 · 解释</span>
+                <span class="detail-card-actions"><button class="text-button" data-card-action="edit">编辑</button><button class="text-button danger-text" data-card-action="delete">删除</button><button class="icon-button tiny close-modal" data-close aria-label="关闭卡片">×</button></span>
+              </div>
+              <div class="flashcard-answer-content" id="detail-answer"></div>
+              <div class="flashcard-bottom-row">
+                <div class="mastery-options" role="group" aria-label="掌握程度"><button class="mastery-option" data-mastery-option="known" type="button">已掌握</button><button class="mastery-option" data-mastery-option="partial" type="button">模糊</button><button class="mastery-option" data-mastery-option="fuzzy" type="button">不认识</button></div>
+                <button class="related-toggle" data-toggle-related type="button" aria-expanded="false"><span>相关</span><span class="related-toggle-count">0</span></button>
+                <button class="flip-card-button" id="flip-card-back" type="button"><span>翻回正面</span><span aria-hidden="true">↺</span></button>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="detail-connections" id="detail-connections-wrap"><div class="connection-heading"><span>相关知识</span><span id="connection-count">0</span></div><div class="connection-list" id="detail-connections"></div></div>
-        <div class="detail-actions"><label class="mastery-select-label">掌握程度<select id="detail-mastery-select"><option value="fuzzy">模糊</option><option value="partial">部分掌握</option><option value="known">已掌握</option></select></label><div><button class="text-button" id="edit-card">编辑</button><button class="text-button danger-text" id="delete-card">删除</button></div></div>
+        <div class="detail-connections" id="detail-connections-wrap" hidden>
+          <div class="connection-heading"><span>相关知识 <span class="connection-count" id="connection-count">0</span></span><button class="graph-open-button" id="open-local-graph" type="button" hidden>关系图 ↗</button></div>
+          <div class="connection-list" id="detail-connections"></div>
+          <button class="connection-more" id="toggle-connections" type="button" hidden></button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop graph-backdrop" id="graph-modal" hidden>
+      <section class="modal graph-modal" role="dialog" aria-modal="true" aria-labelledby="graph-title">
+        <div class="modal-topline"><div><span class="modal-kicker">LOCAL KNOWLEDGE GRAPH</span><h2 id="graph-title">关系图</h2></div><button class="icon-button close-modal" data-close aria-label="关闭关系图">×</button></div>
+        <p class="graph-help">点击节点打开对应卡片</p>
+        <div class="local-graph" id="local-graph"></div>
+        <div class="graph-note" id="graph-note" hidden></div>
       </section>
     </div>
 
@@ -121,10 +165,10 @@
         <div class="modal-topline"><div><span class="modal-kicker">MAKE A CONNECTION</span><h2 id="editor-title">新建知识卡片</h2></div><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
         <form id="card-form">
           <label class="form-field"><span>正面 <small>提示 / 概念</small></span><textarea id="front-input" rows="2" placeholder="例如：什么是贝叶斯定理？" required></textarea></label>
-          <label class="form-field"><span>反面 <small>解释 / 公式 / 例子</small></span><textarea id="back-input" rows="5" placeholder="写下你希望自己能想起来的内容…" required></textarea></label>
+          <label class="form-field"><span>反面 <small>支持 Markdown 和 LaTeX 公式</small></span><textarea id="back-input" rows="5" placeholder="可使用标题、粗体、列表、引用、代码块等 Markdown 语法；公式用 $...$ 或 $$...$$" required></textarea></label>
           <div class="form-row">
             <label class="form-field"><span>主题标签 <small>一个标签</small></span><input id="tag-input" list="known-tags" placeholder="例如：统计学" /><datalist id="known-tags"></datalist></label>
-            <label class="form-field"><span>掌握程度</span><select id="mastery-input"><option value="fuzzy">模糊</option><option value="partial">部分掌握</option><option value="known">已掌握</option></select></label>
+            <label class="form-field"><span>掌握程度</span><select id="mastery-input"><option value="known">已掌握</option><option value="partial">模糊</option><option value="fuzzy">不认识</option></select></label>
           </div>
           <div class="form-field relation-field"><span>连接到其他卡片 <small>可多选</small></span><div class="relation-search"><span>⌕</span><input id="relation-search" placeholder="搜索卡片…" /></div><div class="relation-picker" id="relation-picker"></div><div class="selected-relations" id="selected-relations"></div></div>
           <div class="form-error" id="form-error" role="alert"></div>

@@ -15,6 +15,7 @@
   const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
   let cards = loadCards();
   let customTags = loadTags();
+  let expandedTags = new Set();
   let view = 'all';
   let selectedTag = '';
   let selectedMastery = 'all';
@@ -44,7 +45,14 @@
   }
   function saveCards() { localStorage.setItem(STORE_KEY, JSON.stringify(cards)); }
   function saveTags() { localStorage.setItem(TAG_STORE_KEY, JSON.stringify(customTags)); }
-  function tags() { return [...new Set([...customTags, ...cards.map(card => card.tag.trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'zh-Hans')); }
+  function tags() {
+    const all = new Set();
+    [...customTags, ...cards.map(card => card.tag.trim()).filter(Boolean)].forEach(tag => {
+      const parts = tag.split('/').map(part => part.trim()).filter(Boolean);
+      for (let index = 1; index <= parts.length; index += 1) all.add(parts.slice(0, index).join('/'));
+    });
+    return [...all].sort((a, b) => a.localeCompare(b, 'zh-Hans'));
+  }
   function connectedCount(card) { return new Set((card.links || []).filter(id => cards.some(item => item.id === id))).size; }
   function relativeDate(time) {
     const minutes = Math.max(1, Math.floor((Date.now() - time) / 60000));
@@ -60,7 +68,7 @@
     let list = cards.filter(card => {
       if (view === 'fuzzy' && card.mastery === 'known') return false;
       if (view === 'recent' && Date.now() - card.updatedAt > 1000 * 60 * 60 * 24 * 30) return false;
-      if (selectedTag && card.tag !== selectedTag) return false;
+      if (selectedTag && card.tag !== selectedTag && !card.tag.startsWith(`${selectedTag}/`)) return false;
       if (selectedMastery !== 'all' && card.mastery !== selectedMastery) return false;
       if (query && !`${card.front}\n${card.back}\n${card.tag}`.toLocaleLowerCase().includes(query)) return false;
       return true;
@@ -79,7 +87,28 @@
   function renderTags() {
     const host = $('#tag-list');
     const list = tags();
-    host.innerHTML = list.length ? list.map(tag => `<button class="tag-row ${selectedTag === tag ? 'selected' : ''}" data-tag="${escapeHtml(tag)}"><span class="tag-color"></span><span>${escapeHtml(tag)}</span><span class="tag-size">${cards.filter(card => card.tag === tag).length}</span></button>`).join('') : '<div class="no-relations" style="padding:4px 10px">还没有标签</div>';
+    const known = new Set(list);
+    const children = new Map();
+    list.forEach(tag => {
+      const splitAt = tag.lastIndexOf('/');
+      const parent = splitAt < 0 ? '' : tag.slice(0, splitAt);
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(tag);
+    });
+    const countFor = tag => cards.filter(card => card.tag === tag || card.tag.startsWith(`${tag}/`)).length;
+    const renderBranch = (tag, depth = 0) => {
+      const nested = (children.get(tag) || []).filter(child => known.has(child));
+      const expanded = expandedTags.has(tag);
+      const segments = tag.split('/');
+      const label = segments[segments.length - 1];
+      return `<div class="tag-node" style="--tag-depth:${depth}"><div class="tag-row-line">${nested.length ? `<button class="tag-expand" data-expand-tag="${escapeHtml(tag)}" aria-label="${expanded ? '折叠' : '展开'}${escapeHtml(label)}" aria-expanded="${expanded}">${expanded ? '⌄' : '›'}</button>` : '<span class="tag-expand-placeholder"></span>'}<button class="tag-row ${selectedTag === tag ? 'selected' : ''}" data-tag="${escapeHtml(tag)}"><span class="tag-color"></span><span class="tag-label" title="${escapeHtml(tag)}">${escapeHtml(label)}</span><span class="tag-size">${countFor(tag)}</span></button></div>${nested.length && expanded ? `<div class="tag-children">${nested.map(child => renderBranch(child, depth + 1)).join('')}</div>` : ''}</div>`;
+    };
+    host.innerHTML = list.length ? (children.get('') || []).map(tag => renderBranch(tag)).join('') : '<div class="no-relations" style="padding:4px 10px">还没有标签</div>';
+    $$('[data-expand-tag]', host).forEach(button => button.addEventListener('click', () => {
+      const tag = button.dataset.expandTag;
+      if (expandedTags.has(tag)) expandedTags.delete(tag); else expandedTags.add(tag);
+      renderTags();
+    }));
     $$('.tag-row', host).forEach(button => button.addEventListener('click', () => { selectedTag = selectedTag === button.dataset.tag ? '' : button.dataset.tag; view = 'all'; syncNav(); render(); }));
   }
   function renderTagOptions() { $('#known-tags').innerHTML = tags().map(tag => `<option value="${escapeHtml(tag)}"></option>`).join(''); }
@@ -273,19 +302,28 @@
   $$('.close-modal,[data-close]').forEach(button => button.addEventListener('click', () => { closeModal(button.closest('.modal-backdrop')); if (button.closest('#editor-modal')) editorCardId = null; }));
   $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) { closeModal(backdrop); if (backdrop.id === 'editor-modal') editorCardId = null; } }));
   $('#sort-button').addEventListener('click', () => { newestFirst = !newestFirst; $('#sort-button').innerHTML = `<span>☷</span> ${newestFirst ? '最近更新' : '按名称'} <span class="sort-chevron">⌄</span>`; renderCards(); });
-  function openTagCreator() {
+  function openTagCreator(parent = selectedTag) {
     $('#tag-name-input').value = '';
     $('#tag-form-error').textContent = '';
+    const parentSelect = $('#tag-parent-select');
+    parentSelect.innerHTML = `<option value="">顶级标签</option>${tags().map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(tag.replaceAll('/', ' › '))}</option>`).join('')}`;
+    parentSelect.value = tags().includes(parent) ? parent : '';
     openModal($('#tag-modal'));
     setTimeout(() => $('#tag-name-input').focus(), 60);
   }
   function saveTag(event) {
     event.preventDefault();
-    const tag = $('#tag-name-input').value.trim().replace(/^#/, '');
-    if (!tag) { $('#tag-form-error').textContent = '请输入标签名称。'; return; }
-    if (tag.includes(',')) { $('#tag-form-error').textContent = '标签名称不能包含逗号。'; return; }
+    const name = $('#tag-name-input').value.trim().replace(/^#/, '');
+    const parent = $('#tag-parent-select').value;
+    if (!name) { $('#tag-form-error').textContent = '请输入标签名称。'; return; }
+    if (name.includes(',') || name.includes('/')) { $('#tag-form-error').textContent = '标签名称不能包含逗号或斜线。'; return; }
+    const tag = parent ? `${parent}/${name}` : name;
     if (tags().includes(tag)) { $('#tag-form-error').textContent = '这个标签已经存在。'; return; }
     customTags.push(tag);
+    if (parent) {
+      const parts = parent.split('/');
+      for (let index = 1; index <= parts.length; index += 1) expandedTags.add(parts.slice(0, index).join('/'));
+    }
     saveTags();
     closeModal($('#tag-modal'));
     render();

@@ -136,6 +136,7 @@
       <section class="modal editor-modal tag-modal" role="dialog" aria-modal="true" aria-labelledby="tag-title">
         <div class="modal-topline"><div><span class="modal-kicker">CREATE A TAG</span><h2 id="tag-title">新建标签</h2></div><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
         <form id="tag-form">
+          <label class="form-field"><span>父标签 <small>可选，留空则创建顶级标签</small></span><select id="tag-parent-select"><option value="">顶级标签</option></select></label>
           <label class="form-field"><span>标签名称 <small>可用于多张卡片</small></span><input id="tag-name-input" placeholder="例如：概率论" autocomplete="off" required /></label>
           <div class="form-error" id="tag-form-error" role="alert"></div>
           <div class="modal-footer"><span class="save-hint">创建后可在卡片编辑中选择</span><div><button type="button" class="button cancel-button" data-close>取消</button><button type="submit" class="button primary-button">创建标签</button></div></div>

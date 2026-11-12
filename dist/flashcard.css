@@ -33,6 +33,62 @@
   width: min(100%, 440px);
 }
 
+.section-heading {
+  padding-right: 9px;
+}
+
+.section-heading .icon-button.tiny {
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.tag-list {
+  gap: 2px;
+}
+
+.tag-row-line {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding-left: calc(var(--tag-depth, 0) * 12px);
+}
+
+.tag-expand,
+.tag-expand-placeholder {
+  width: 18px;
+  height: 34px;
+  flex: 0 0 18px;
+}
+
+.tag-expand {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #9a9c91;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.tag-expand:hover {
+  background: #e8e9e1;
+  color: #526b50;
+}
+
+.tag-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.tag-row .tag-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .flashcard {
   position: relative;
   margin: 18px 0 20px;

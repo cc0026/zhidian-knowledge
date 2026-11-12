@@ -302,32 +302,27 @@
   $$('.close-modal,[data-close]').forEach(button => button.addEventListener('click', () => { closeModal(button.closest('.modal-backdrop')); if (button.closest('#editor-modal')) editorCardId = null; }));
   $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) { closeModal(backdrop); if (backdrop.id === 'editor-modal') editorCardId = null; } }));
   $('#sort-button').addEventListener('click', () => { newestFirst = !newestFirst; $('#sort-button').innerHTML = `<span>☷</span> ${newestFirst ? '最近更新' : '按名称'} <span class="sort-chevron">⌄</span>`; renderCards(); });
-  function openTagCreator(parent = selectedTag) {
+  function openTagCreator() {
     $('#tag-name-input').value = '';
     $('#tag-form-error').textContent = '';
-    const parentSelect = $('#tag-parent-select');
-    parentSelect.innerHTML = `<option value="">顶级标签</option>${tags().map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(tag.replaceAll('/', ' › '))}</option>`).join('')}`;
-    parentSelect.value = tags().includes(parent) ? parent : '';
     openModal($('#tag-modal'));
     setTimeout(() => $('#tag-name-input').focus(), 60);
   }
   function saveTag(event) {
     event.preventDefault();
-    const name = $('#tag-name-input').value.trim().replace(/^#/, '');
-    const parent = $('#tag-parent-select').value;
-    if (!name) { $('#tag-form-error').textContent = '请输入标签名称。'; return; }
-    if (name.includes(',') || name.includes('/')) { $('#tag-form-error').textContent = '标签名称不能包含逗号或斜线。'; return; }
-    const tag = parent ? `${parent}/${name}` : name;
+    const input = $('#tag-name-input').value.trim().replace(/^#/, '');
+    if (!input) { $('#tag-form-error').textContent = '请输入标签名称。'; return; }
+    const parts = input.split('/').map(part => part.trim());
+    if (parts.some(part => !part)) { $('#tag-form-error').textContent = '标签路径中每一级都需要填写名称。'; return; }
+    if (parts.some(part => part.includes(','))) { $('#tag-form-error').textContent = '标签名称不能包含逗号。'; return; }
+    const tag = parts.join('/');
     if (tags().includes(tag)) { $('#tag-form-error').textContent = '这个标签已经存在。'; return; }
     customTags.push(tag);
-    if (parent) {
-      const parts = parent.split('/');
-      for (let index = 1; index <= parts.length; index += 1) expandedTags.add(parts.slice(0, index).join('/'));
-    }
+    for (let index = 1; index < parts.length; index += 1) expandedTags.add(parts.slice(0, index).join('/'));
     saveTags();
     closeModal($('#tag-modal'));
     render();
-    notify(`标签「${tag}」已创建`);
+    notify(`标签路径「${tag}」已创建`);
   }
   $('#manage-tags').addEventListener('click', openTagCreator);
   $('#add-tag').addEventListener('click', openTagCreator);

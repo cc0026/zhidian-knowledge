@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./flashcard.css" />
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -95,12 +96,21 @@
     </div>
 
     <div class="modal-backdrop" id="detail-modal" hidden>
-      <section class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <section class="modal detail-modal" role="dialog" aria-modal="true" aria-label="知识卡片详情">
         <div class="modal-topline"><span class="modal-kicker">KNOWLEDGE CARD</span><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
         <div class="detail-meta"><span class="tag-pill" id="detail-tag"></span><span class="mastery-pill" id="detail-mastery"></span></div>
-        <div class="detail-front"><div class="field-label">正面 · 提示</div><h2 id="detail-title"></h2></div>
-        <div class="detail-divider"><span>翻开看看</span></div>
-        <div class="detail-back"><div class="field-label">反面 · 解释</div><p id="detail-answer"></p></div>
+        <div class="flashcard" id="detail-flashcard" data-face="front">
+          <div class="flashcard-face flashcard-front" id="flashcard-front-face">
+            <div class="flashcard-face-label"><span>正面 · 提示</span><span>01 / 02</span></div>
+            <h2 id="detail-title"></h2>
+            <button class="flip-card-button" id="flip-card" type="button"><span>翻开答案</span><span aria-hidden="true">↻</span></button>
+          </div>
+          <div class="flashcard-face flashcard-back" id="flashcard-back-face" hidden>
+            <div class="flashcard-face-label"><span>反面 · 解释</span><span>02 / 02</span></div>
+            <p id="detail-answer"></p>
+            <button class="flip-card-button" id="flip-card-back" type="button"><span>翻回正面</span><span aria-hidden="true">↺</span></button>
+          </div>
+        </div>
         <div class="detail-connections" id="detail-connections-wrap"><div class="connection-heading"><span>相关知识</span><span id="connection-count">0</span></div><div class="connection-list" id="detail-connections"></div></div>
         <div class="detail-actions"><label class="mastery-select-label">掌握程度<select id="detail-mastery-select"><option value="fuzzy">模糊</option><option value="partial">部分掌握</option><option value="known">已掌握</option></select></label><div><button class="text-button" id="edit-card">编辑</button><button class="text-button danger-text" id="delete-card">删除</button></div></div>
       </section>

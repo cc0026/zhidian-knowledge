@@ -97,7 +97,7 @@
     const grid = $('#card-grid');
     grid.innerHTML = list.map(card => `<article class="knowledge-card" tabindex="0" role="button" aria-label="打开卡片：${escapeHtml(card.front)}" data-card-id="${escapeHtml(card.id)}">
       <div class="card-top"><span class="card-tag"><span class="card-tag-dot"></span>${escapeHtml(card.tag || '未分类')}</span><span class="mastery-pill mastery-${card.mastery}">${masteryLabels[card.mastery]}</span></div>
-      <h3 class="card-title">${escapeHtml(card.front)}</h3><p class="card-answer">${escapeHtml(card.back)}</p>
+      <h3 class="card-title">${escapeHtml(card.front)}</h3>
       <div class="card-bottom"><span class="connection-indicator"><span class="connection-glyph">⌘</span>${connectedCount(card)} 个连接</span><span class="card-date">${relativeDate(card.updatedAt)}</span><span class="card-open-hint">↗</span></div>
     </article>`).join('');
     $$('.knowledge-card', grid).forEach(element => {
@@ -126,6 +126,9 @@
     $('#detail-mastery').className = `mastery-pill mastery-${card.mastery}`;
     $('#detail-title').textContent = card.front;
     $('#detail-answer').textContent = card.back;
+    $('#flashcard-front-face').hidden = false;
+    $('#flashcard-back-face').hidden = true;
+    $('#detail-flashcard').dataset.face = 'front';
     $('#detail-mastery-select').value = card.mastery;
     const related = cards.filter(item => (card.links || []).includes(item.id));
     $('#connection-count').textContent = related.length;
@@ -133,6 +136,18 @@
     $$('.connection-item', $('#detail-connections')).forEach(button => button.addEventListener('click', () => openDetail(button.dataset.relatedId)));
     openModal($('#detail-modal'));
   }
+  $('#flip-card').addEventListener('click', () => {
+    $('#flashcard-front-face').hidden = true;
+    $('#flashcard-back-face').hidden = false;
+    $('#detail-flashcard').dataset.face = 'back';
+    $('#flip-card-back').focus();
+  });
+  $('#flip-card-back').addEventListener('click', () => {
+    $('#flashcard-back-face').hidden = true;
+    $('#flashcard-front-face').hidden = false;
+    $('#detail-flashcard').dataset.face = 'front';
+    $('#flip-card').focus();
+  });
   function openEditor(id = null) {
     editorCardId = id;
     const card = cards.find(item => item.id === id);

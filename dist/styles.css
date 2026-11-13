@@ -7,7 +7,7 @@
 @media(max-width:640px){.roam-view{min-height:55vh;padding:35px 12px}.roam-view h2{font-size:21px}.roam-view p{max-width:290px;line-height:1.7}}
 
 .account-modal{width:min(100%,430px)}.account-modal h2{font-size:20px;margin:7px 0 0}.account-description,.account-footnote{font-size:11px;line-height:1.7;color:#83877c}.account-state{padding:10px 12px;margin:16px 0;border:1px solid #e2e5db;border-radius:6px;background:#f2f4ee;color:#62745b;font-size:11px;overflow-wrap:anywhere}.account-state[data-error="true"]{background:#f8eeea;border-color:#ecd6cb;color:#a35f4a}.account-actions{display:flex;align-items:center;gap:8px}.account-actions .button{flex:1}.account-cloud-actions{margin-top:14px}.account-footnote{font-size:10px;margin:16px 0 0;color:#999b91}.account-modal .form-field{margin-bottom:12px}.account-modal .form-field input{font-size:13px}.account-modal .modal-topline{margin-bottom:4px}
-@media(max-width:640px){.account-modal{width:100%;padding:22px 20px}.account-modal .form-field input{font-size:16px}.account-actions{gap:7px}.account-actions .button{padding:0 9px}}
+@media(max-width:640px){.modal-backdrop{grid-template-columns:minmax(0,1fr)}.account-modal{width:100%;min-width:0;max-width:100%;padding:22px 20px;overflow-x:clip}.account-modal .form-field,.account-modal .account-actions{min-width:0}.account-modal .form-field input{width:100%;min-width:0;max-width:100%;font-size:16px}.account-actions{gap:7px}.account-actions .button{min-width:0;padding:0 9px}}
 
 .sidebar-close{display:none}
 .sidebar-brand-row{display:flex;align-items:center;gap:4px;margin:1px 0 39px 9px}.sidebar-brand-row .brand{margin:0}

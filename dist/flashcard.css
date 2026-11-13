@@ -1240,10 +1240,11 @@ body { font-size: var(--type-body); }
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  .flashcard-shell .flashcard-face-label { flex-wrap: wrap; }
-  .flashcard-shell .face-label-main { flex: 1 0 100%; }
+  .flashcard-shell .flashcard-face-label { flex-wrap: nowrap; gap: 5px; }
+  .flashcard-shell .face-label-main { flex: 1 1 auto; min-width: 0; }
   .flashcard-shell .detail-card-actions {
-    width: 100%;
+    flex: 0 0 auto;
+    width: auto;
     justify-content: flex-end;
     gap: 4px;
   }

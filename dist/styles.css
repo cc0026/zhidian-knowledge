@@ -10,4 +10,5 @@
 @media(max-width:640px){.account-modal{width:100%;padding:22px 20px}.account-actions{gap:7px}.account-actions .button{padding:0 9px}}
 
 .sidebar-close{display:none}
-@media(max-width:640px){.sidebar-close{display:grid;position:absolute;top:17px;right:12px;z-index:1;width:34px;height:34px;font-size:22px}.sidebar-scrim{position:fixed;inset:0;z-index:4;display:block;width:100%;height:100%;border:0;padding:0;background:rgba(31,38,31,.24);touch-action:manipulation}}
+.sidebar-brand-row{display:flex;align-items:center;gap:4px;margin:1px 0 39px 9px}.sidebar-brand-row .brand{margin:0}
+@media(max-width:640px){.sidebar-brand-row .sidebar-close{display:grid;position:static;z-index:auto;flex:none;width:30px;height:30px;margin:0 0 0 2px;font-size:20px}.sidebar-scrim{position:fixed;inset:0;z-index:4;display:block;width:100%;height:100%;border:0;padding:0;background:rgba(31,38,31,.24);touch-action:manipulation}}

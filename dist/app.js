@@ -1,7 +1,12 @@
 (() => {
   const STORE_KEY = 'zhidian.knowledge.v1';
   const TAG_STORE_KEY = 'zhidian.knowledge.tags.v1';
+  const TOMBSTONE_KEY = 'zhidian.knowledge.deleted.v1';
   const PUBLISHED_CARDS_URL = './cards/cards.json';
+  const cloudConfig = window.ZHIDIAN_SUPABASE_CONFIG || {};
+  const supabase = window.supabase?.createClient && cloudConfig.url && cloudConfig.publishableKey
+    ? window.supabase.createClient(cloudConfig.url, cloudConfig.publishableKey)
+    : null;
   const masteryLabels = { fuzzy: '不认识', partial: '模糊', known: '已掌握' };
   const seedCards = [
     { id: 'seed-bayes', front: '贝叶斯定理在回答什么问题？', back: '它描述如何根据新证据更新一个假设的可信度。\n\nP(A|B) = P(B|A) × P(A) / P(B)', tag: '统计学', mastery: 'partial', links: ['seed-base-rate'], updatedAt: Date.now() - 1000 * 60 * 28 },
@@ -14,6 +19,14 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  let storageScope = '';
+  let currentUser = null;
+  let cloudSyncTimer = null;
+  let cloudSyncRunning = false;
+  let cloudSyncQueued = false;
+  let cloudSyncDeclined = false;
+  let declinedLocalImport = null;
+  const storageKey = key => storageScope ? `${key}.user.${storageScope}` : key;
   let cards = loadCards();
   let customTags = loadTags();
   let expandedTags = new Set();
@@ -27,10 +40,12 @@
   let selectedLinks = new Set();
   let newestFirst = true;
   let toastTimer;
+  let roamHistory = [];
+  let roamHistoryIndex = -1;
 
   function loadCards() {
     try {
-      const raw = localStorage.getItem(STORE_KEY);
+      const raw = localStorage.getItem(storageKey(STORE_KEY));
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed.filter(card => card && card.id && typeof card.front === 'string' && typeof card.back === 'string').map(card => ({ ...card, tag: card.tag || '', mastery: masteryLabels[card.mastery] ? card.mastery : 'fuzzy', links: Array.isArray(card.links) ? card.links : [] }));
@@ -40,20 +55,43 @@
   }
   function loadTags() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(TAG_STORE_KEY) || '[]');
+      const parsed = JSON.parse(localStorage.getItem(storageKey(TAG_STORE_KEY)) || '[]');
       if (Array.isArray(parsed)) return [...new Set(parsed.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean))];
     } catch (error) { console.warn('Could not read custom tags', error); }
     return [];
   }
   function setStorageNote(message) { $('#storage-note').textContent = message; }
   function saveCards() {
-    localStorage.setItem(STORE_KEY, JSON.stringify(cards));
-    setStorageNote('本机有更改 · 导出并上传后同步到其他设备');
+    localStorage.setItem(storageKey(STORE_KEY), JSON.stringify(cards));
+    setStorageNote(currentUser ? '已保存到本机 · 正在同步云端' : '已保存到本机 · 登录后同步到云端');
+    scheduleCloudSync();
   }
   function saveTags() {
-    localStorage.setItem(TAG_STORE_KEY, JSON.stringify(customTags));
-    setStorageNote('本机有更改 · 导出并上传后同步到其他设备');
+    localStorage.setItem(storageKey(TAG_STORE_KEY), JSON.stringify(customTags));
+    setStorageNote(currentUser ? '已保存到本机 · 正在同步云端' : '已保存到本机 · 登录后同步到云端');
+    scheduleCloudSync();
   }
+  window.addEventListener('storage', event => {
+    if (event.key === storageKey(STORE_KEY) && event.newValue) {
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (!Array.isArray(parsed)) return;
+        cards = normalizeCardDataset(parsed).cards;
+        render();
+        setStorageNote('已从其他标签页同步');
+        scheduleCloudSync();
+      } catch (error) { console.warn('Could not sync cards from another tab', error); }
+    } else if (event.key === storageKey(TAG_STORE_KEY) && event.newValue) {
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (!Array.isArray(parsed)) return;
+        customTags = [...new Set(parsed.filter(tag => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean))];
+        render();
+        setStorageNote('已从其他标签页同步');
+        scheduleCloudSync();
+      } catch (error) { console.warn('Could not sync tags from another tab', error); }
+    }
+  });
   function normalizeCardDataset(payload) {
     const incoming = Array.isArray(payload) ? payload : payload?.cards;
     if (!Array.isArray(incoming) || !incoming.every(card => card && typeof card.front === 'string' && typeof card.back === 'string')) throw new Error('卡片文件格式不正确');
@@ -77,13 +115,13 @@
     return normalizeCardDataset(await response.json());
   }
   async function initializePublishedCards() {
-    if (localStorage.getItem(STORE_KEY)) {
-      setStorageNote('本机卡片 · 导出并上传后同步到其他设备');
+    if (localStorage.getItem(storageKey(STORE_KEY))) {
+      setStorageNote('本机卡片 · 登录后同步到云端');
       return;
     }
     try {
       const dataset = await fetchPublishedDataset();
-      if (localStorage.getItem(STORE_KEY)) return;
+      if (localStorage.getItem(storageKey(STORE_KEY))) return;
       cards = dataset.cards;
       customTags = dataset.tags;
       saveCards(); saveTags();
@@ -95,7 +133,8 @@
     }
   }
   async function loadPublishedCards() {
-    const hasLocalData = localStorage.getItem(STORE_KEY) || localStorage.getItem(TAG_STORE_KEY);
+    if (currentUser) { notify('登录后请使用账号同步，避免用公共版本覆盖云端卡片'); return; }
+    const hasLocalData = localStorage.getItem(storageKey(STORE_KEY)) || localStorage.getItem(storageKey(TAG_STORE_KEY));
     if (hasLocalData && !confirm('载入 GitHub 版本会替换此浏览器里的卡片和标签。若要保留本机更改，请先导出。继续载入吗？')) return;
     const button = $('#load-published');
     button.disabled = true;
@@ -113,6 +152,205 @@
       console.warn('Could not load published knowledge cards', error);
     } finally { button.disabled = false; }
   }
+  function setAccountState(message, isError = false) {
+    const state = $('#account-state');
+    state.textContent = message;
+    state.dataset.error = String(isError);
+  }
+  function updateAccountUi() {
+    const signedIn = Boolean(currentUser);
+    $('#account-form').hidden = signedIn;
+    $('#account-cloud-actions').hidden = !signedIn;
+    $('#account-button').textContent = signedIn ? (currentUser.email?.[0]?.toUpperCase() || '✓') : '知';
+    $('#account-button').title = signedIn ? `已登录：${currentUser.email}` : '账号与云端同步';
+    if (signedIn && $('#account-state').dataset.error !== 'true') setAccountState(`已登录：${currentUser.email || '账号'} · 同步状态待确认`);
+  }
+  function readTombstones() {
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey(TOMBSTONE_KEY)) || '[]');
+      return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && Number(item.deletedAt) > 0) : [];
+    } catch { return []; }
+  }
+  function writeTombstones(items) { localStorage.setItem(storageKey(TOMBSTONE_KEY), JSON.stringify(items)); }
+  function markCardDeleted(id) {
+    const tombstones = readTombstones().filter(item => item.id !== id);
+    tombstones.push({ id, deletedAt: Date.now() });
+    writeTombstones(tombstones);
+  }
+  function scheduleCloudSync(delay = 700) {
+    if (!supabase || !currentUser || cloudSyncDeclined) return;
+    clearTimeout(cloudSyncTimer);
+    cloudSyncTimer = setTimeout(() => syncCloud(), delay);
+  }
+  async function syncCloud({ legacyCards = null, legacyTags = null, initialLogin = false } = {}) {
+    if (!supabase || !currentUser) return;
+    if (cloudSyncRunning) { cloudSyncQueued = true; return; }
+    cloudSyncRunning = true;
+    const userId = currentUser.id;
+    setAccountState('正在与云端同步…');
+    try {
+      const [cardResult, settingsResult] = await Promise.all([
+        supabase.from('cards').select('card_id,card,updated_at,deleted_at').eq('user_id', userId),
+        supabase.from('user_settings').select('custom_tags').eq('user_id', userId).maybeSingle()
+      ]);
+      if (cardResult.error) throw cardResult.error;
+      if (settingsResult.error) throw settingsResult.error;
+      if (currentUser?.id !== userId) return;
+      const remoteRows = cardResult.data || [];
+      let localCards = cards.slice();
+      let localTags = customTags.slice();
+      if (initialLogin && !remoteRows.length && Array.isArray(legacyCards) && legacyCards.length) {
+        const importLocal = confirm(`这个账号的云端卡片库是空的。要把本机的 ${legacyCards.length} 张卡片导入云端吗？原有本机数据会保留。`);
+        if (importLocal) {
+          localCards = legacyCards;
+          localTags = Array.isArray(legacyTags) ? legacyTags : [];
+        } else {
+          cloudSyncDeclined = true;
+          declinedLocalImport = { cards: legacyCards, tags: legacyTags || [] };
+          cards = [];
+          customTags = [];
+          localStorage.setItem(storageKey(STORE_KEY), JSON.stringify(cards));
+          localStorage.setItem(storageKey(TAG_STORE_KEY), JSON.stringify(customTags));
+          render();
+          setAccountState('已登录 · 本机卡片未导入。可稍后点击“立即同步”重新选择。');
+          return;
+        }
+      }
+      const localTombstones = new Map(readTombstones().map(item => [item.id, Number(item.deletedAt)]));
+      const merged = new Map();
+      for (const row of remoteRows) {
+        const card = row.card && typeof row.card === 'object' ? row.card : { id: row.card_id, front: '', back: '', tag: '', mastery: 'fuzzy', links: [] };
+        const remoteDeletedAt = row.deleted_at ? Date.parse(row.deleted_at) : 0;
+        const remoteAt = remoteDeletedAt || Number(card.updatedAt) || Date.parse(row.updated_at) || 0;
+        merged.set(row.card_id, { card, timestamp: remoteAt, deletedAt: remoteDeletedAt });
+      }
+      for (const card of localCards) {
+        const localDeletedAt = localTombstones.get(card.id) || 0;
+        const localAt = localDeletedAt || Number(card.updatedAt) || Date.now();
+        const prior = merged.get(card.id);
+        if (!prior || localAt > prior.timestamp) merged.set(card.id, { card, timestamp: localAt, deletedAt: localDeletedAt });
+      }
+      for (const [id, deletedAt] of localTombstones) {
+        const prior = merged.get(id);
+        if (!prior || deletedAt > prior.timestamp) merged.set(id, { card: prior?.card || { id, front: '', back: '', tag: '', mastery: 'fuzzy', links: [] }, timestamp: deletedAt, deletedAt });
+      }
+      const finalRows = [...merged.entries()].map(([id, item]) => ({
+        user_id: userId,
+        card_id: id,
+        card: { ...item.card, id },
+        updated_at: new Date(item.timestamp || Date.now()).toISOString(),
+        deleted_at: item.deletedAt ? new Date(item.deletedAt).toISOString() : null
+      }));
+      if (finalRows.length) {
+        const { error } = await supabase.from('cards').upsert(finalRows, { onConflict: 'user_id,card_id' });
+        if (error) throw error;
+      }
+      const cloudTags = Array.isArray(settingsResult.data?.custom_tags) ? settingsResult.data.custom_tags : [];
+      const mergedTags = [...new Set([...localTags, ...cloudTags].filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim()))];
+      const { error: settingsError } = await supabase.from('user_settings').upsert({ user_id: userId, custom_tags: mergedTags, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      if (settingsError) throw settingsError;
+      if (currentUser?.id !== userId) return;
+      cards = [...merged.values()].filter(item => !item.deletedAt).map(item => item.card);
+      customTags = mergedTags;
+      declinedLocalImport = null;
+      writeTombstones([...merged.entries()].filter(([, item]) => item.deletedAt).map(([id, item]) => ({ id, deletedAt: item.deletedAt })));
+      localStorage.setItem(storageKey(STORE_KEY), JSON.stringify(cards));
+      localStorage.setItem(storageKey(TAG_STORE_KEY), JSON.stringify(customTags));
+      render();
+      cloudSyncDeclined = false;
+      setStorageNote('云端已同步 · 本机副本可离线使用');
+      setAccountState(`已同步 · ${cards.length} 张卡片`);
+    } catch (error) {
+      console.warn('Cloud sync failed', error);
+      const detail = String(error?.message || error || '未知错误');
+      const schemaMissing = /relation .* does not exist|could not find the table|schema cache/i.test(detail);
+      const message = schemaMissing ? '请先在 Supabase SQL Editor 运行项目中的 supabase/schema.sql。' : `同步失败：${detail}`;
+      setAccountState(message, true);
+      setStorageNote('本机副本已保存 · 云端暂不可用');
+    } finally {
+      cloudSyncRunning = false;
+      if (cloudSyncQueued) {
+        cloudSyncQueued = false;
+        scheduleCloudSync(100);
+      }
+    }
+  }
+  async function handleAuthSession(session) {
+    const user = session?.user || null;
+    if (!user) {
+      if (currentUser) {
+        currentUser = null;
+        storageScope = '';
+        cloudSyncDeclined = false;
+        declinedLocalImport = null;
+        cards = loadCards();
+        customTags = loadTags();
+        render();
+      }
+      updateAccountUi();
+      if (!currentUser) setAccountState('尚未登录 · 卡片保存在本机');
+      return;
+    }
+    if (currentUser?.id === user.id) { currentUser = user; updateAccountUi(); return; }
+    const guestCards = cards.slice();
+    const guestTags = customTags.slice();
+    currentUser = user;
+    storageScope = user.id;
+    cloudSyncDeclined = false;
+    declinedLocalImport = null;
+    const hasAccountCopy = localStorage.getItem(storageKey(STORE_KEY)) !== null;
+    if (hasAccountCopy) {
+      cards = loadCards();
+      customTags = loadTags();
+    } else {
+      cards = [];
+      customTags = [];
+    }
+    render();
+    updateAccountUi();
+    await syncCloud({ legacyCards: hasAccountCopy ? null : guestCards, legacyTags: hasAccountCopy ? null : guestTags, initialLogin: !hasAccountCopy });
+  }
+  async function initializeCloudAuth() {
+    if (!supabase) {
+      setAccountState('云端配置未加载，请检查网络或 Supabase 配置。', true);
+      return;
+    }
+    updateAccountUi();
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setTimeout(() => handleAuthSession(session), 0);
+    });
+  }
+  $('#account-button').addEventListener('click', () => openModal($('#account-modal')));
+  $('#account-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!supabase) { setAccountState('Supabase 客户端未加载，请检查网络后重试。', true); return; }
+    const { error } = await supabase.auth.signInWithPassword({ email: $('#account-email').value.trim(), password: $('#account-password').value });
+    if (error) setAccountState(error.message, true);
+  });
+  $('#sign-up-button').addEventListener('click', async () => {
+    if (!supabase) { setAccountState('Supabase 客户端未加载，请检查网络后重试。', true); return; }
+    const email = $('#account-email').value.trim();
+    const password = $('#account-password').value;
+    if (!email || password.length < 8) { setAccountState('请填写邮箱，并设置至少 8 位密码。', true); return; }
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href } });
+    if (error) setAccountState(error.message, true);
+    else if (!data.session) setAccountState('账号已创建。请查收确认邮件，再回到这里登录。');
+    else setAccountState('账号已创建，正在准备同步…');
+  });
+  $('#sync-now-button').addEventListener('click', () => {
+    cloudSyncDeclined = false;
+    if (declinedLocalImport) {
+      const pending = declinedLocalImport;
+      syncCloud({ legacyCards: pending.cards, legacyTags: pending.tags, initialLogin: true });
+    } else syncCloud();
+  });
+  $('#sign-out-button').addEventListener('click', async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) setAccountState(error.message, true);
+    else { closeModal($('#account-modal')); notify('已退出登录，本机卡片仍保留'); }
+  });
+  window.addEventListener('online', () => scheduleCloudSync(150));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleCloudSync(150); });
   function tags() {
     const all = new Set();
     [...customTags, ...cards.map(card => card.tag.trim()).filter(Boolean)].forEach(tag => {
@@ -247,10 +485,10 @@
   }
   function renderTagOptions() { $('#known-tags').innerHTML = tags().map(tag => `<option value="${escapeHtml(tag)}"></option>`).join(''); }
   function updateHeading() {
-    const title = selectedTag ? selectedTag : view === 'stats' ? '统计' : view === 'untagged' ? '未分类' : view === 'tagged' ? '已分类' : view === 'unlinked' ? '无关联' : view === 'linked' ? '已连接' : view === 'recent' ? '最近编辑' : view === 'fuzzy' ? '还不熟悉' : searchQuery ? '搜索结果' : '所有卡片';
+    const title = selectedTag ? selectedTag : view === 'stats' ? '统计' : view === 'roam' ? '漫游' : view === 'untagged' ? '未分类' : view === 'tagged' ? '已分类' : view === 'unlinked' ? '无关联' : view === 'linked' ? '已连接' : view === 'recent' ? '最近编辑' : view === 'fuzzy' ? '还不熟悉' : searchQuery ? '搜索结果' : '所有卡片';
     $('#breadcrumb-current').textContent = title;
     $('#library-title').textContent = title;
-    $('#page-title').innerHTML = selectedTag ? `关于 <em>${escapeHtml(selectedTag)}</em>` : view === 'stats' ? '你的知识库，<em>正在生长。</em>' : view === 'untagged' ? '还没归类的，<em>知识线索。</em>' : view === 'tagged' ? '有标签的，<em>知识脉络。</em>' : view === 'unlinked' ? '尚未连接的，<em>独立想法。</em>' : view === 'linked' ? '已有联系的，<em>知识网络。</em>' : view === 'recent' ? '最近整理的，<em>继续连起来。</em>' : view === 'fuzzy' ? '还有些模糊，<em>慢慢想起来。</em>' : searchQuery ? '找到你的，<em>知识线索。</em>' : '把记得的，<em>连接起来。</em>';
+    $('#page-title').innerHTML = selectedTag ? `关于 <em>${escapeHtml(selectedTag)}</em>` : view === 'stats' ? '你的知识库，<em>正在生长。</em>' : view === 'roam' ? '随手翻开，<em>遇见一个想法。</em>' : view === 'untagged' ? '还没归类的，<em>知识线索。</em>' : view === 'tagged' ? '有标签的，<em>知识脉络。</em>' : view === 'unlinked' ? '尚未连接的，<em>独立想法。</em>' : view === 'linked' ? '已有联系的，<em>知识网络。</em>' : view === 'recent' ? '最近整理的，<em>继续连起来。</em>' : view === 'fuzzy' ? '还有些模糊，<em>慢慢想起来。</em>' : searchQuery ? '找到你的，<em>知识线索。</em>' : '把记得的，<em>连接起来。</em>';
     const chips = [];
     if (selectedTag) chips.push(`<span class="active-chip">标签：${escapeHtml(selectedTag)} <button data-clear="tag" aria-label="清除标签">×</button></span>`);
     if (selectedMastery !== 'all') chips.push(`<span class="active-chip">掌握程度：${masteryLabels[selectedMastery]} <button data-clear="mastery" aria-label="清除掌握程度">×</button></span>`);
@@ -290,12 +528,15 @@
   function render() {
     renderStats(); updateHeading();
     const statsOpen = view === 'stats';
+    const roamOpen = view === 'roam';
     $('#stats-view').hidden = !statsOpen;
-    $('#library-section').hidden = statsOpen;
-    $('#overview-strip').hidden = statsOpen;
-    $('#welcome-row').hidden = statsOpen;
+    $('#roam-view').hidden = !roamOpen;
+    $('#library-section').hidden = statsOpen || roamOpen;
+    $('#overview-strip').hidden = statsOpen || roamOpen;
+    $('#welcome-row').hidden = statsOpen || roamOpen;
     if (statsOpen) renderStatistics();
     renderCards(); syncNav();
+    if (!$('#detail-modal').hidden && activeCardId) syncCardNavigation(activeCardId);
   }
   function openModal(element) { element.hidden = false; document.body.style.overflow = 'hidden'; }
   function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#related-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden && $('#graph-modal').hidden) document.body.style.overflow = ''; }
@@ -351,7 +592,7 @@
       const placeholder = `${marker}${formulas.length}END`;
       formulas.push({ placeholder, formula });
       return placeholder;
-    });
+    }).replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
     let html = window.DOMPurify.sanitize(window.marked.parse(markdown, { gfm: true, breaks: true }));
     formulas.forEach(({ placeholder, formula }) => {
       html = html.replaceAll(placeholder, escapeHtml(formula));
@@ -448,9 +689,76 @@
     $('#flashcard-front-face').hidden = false;
     $('#flashcard-back-face').hidden = true;
     $('#detail-flashcard').dataset.face = 'front';
+    syncCardNavigation(id);
     renderConnections(card);
     openModal($('#detail-modal'));
   }
+  function getCardNavigationList() {
+    if (view === 'roam') return roamHistory.map(id => cards.find(card => card.id === id)).filter(Boolean);
+    const visible = getVisibleCards();
+    if (visible.some(card => card.id === activeCardId)) return visible;
+    return [...cards].sort((a, b) => newestFirst ? b.updatedAt - a.updatedAt : a.front.localeCompare(b.front, 'zh-Hans'));
+  }
+  function syncCardNavigation(id = activeCardId) {
+    const previous = $('#previous-card');
+    const next = $('#next-card');
+    const list = getCardNavigationList();
+    const index = list.findIndex(card => card.id === id);
+    previous.disabled = index <= 0;
+    next.disabled = view === 'roam'
+      ? (roamHistoryIndex >= roamHistory.length - 1 && cards.length < 2)
+      : (index < 0 || index >= list.length - 1);
+  }
+  function openRandomCard() {
+    if (!cards.length) { notify('还没有卡片可以漫游'); return; }
+    const candidates = cards.filter(card => card.id !== activeCardId);
+    if (!candidates.length && roamHistoryIndex >= 0) { notify('目前只有这一张卡片'); return; }
+    const pool = candidates.length ? candidates : cards;
+    const card = pool[Math.floor(Math.random() * pool.length)];
+    roamHistory = roamHistory.slice(0, roamHistoryIndex + 1);
+    roamHistory.push(card.id);
+    roamHistoryIndex = roamHistory.length - 1;
+    openDetail(card.id);
+  }
+  function showPreviousCard() {
+    if (view === 'roam') {
+      if (roamHistoryIndex <= 0) return;
+      roamHistoryIndex -= 1;
+      openDetail(roamHistory[roamHistoryIndex]);
+      return;
+    }
+    const list = getCardNavigationList();
+    const index = list.findIndex(card => card.id === activeCardId);
+    if (index > 0) openDetail(list[index - 1].id);
+  }
+  function showNextCard() {
+    if (view === 'roam') {
+      if (roamHistoryIndex < roamHistory.length - 1) {
+        roamHistoryIndex += 1;
+        openDetail(roamHistory[roamHistoryIndex]);
+        return;
+      }
+      openRandomCard();
+      return;
+    }
+    const list = getCardNavigationList();
+    const index = list.findIndex(card => card.id === activeCardId);
+    if (index >= 0 && index < list.length - 1) openDetail(list[index + 1].id);
+  }
+  function startRoam() {
+    searchQuery = '';
+    $('#search-input').value = '';
+    selectedTag = '';
+    selectedMastery = 'all';
+    roamHistory = [];
+    roamHistoryIndex = -1;
+    $$('.filter-tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.mastery === 'all'));
+    openView('roam');
+    openRandomCard();
+  }
+  $('#roam-random-card').addEventListener('click', () => cards.length ? openRandomCard() : openEditor());
+  $('#previous-card').addEventListener('click', showPreviousCard);
+  $('#next-card').addEventListener('click', showNextCard);
   $('#flip-card').addEventListener('click', () => {
     $('#flashcard-front-face').hidden = true;
     $('#flashcard-back-face').hidden = false;
@@ -497,11 +805,15 @@
       const wasLinked = previous.has(other.id) || (other.links || []).includes(card.id);
       const shouldLink = wanted.has(other.id);
       if (shouldLink) {
+        const wasAlreadyLinked = (card.links || []).includes(other.id) && (other.links || []).includes(card.id);
         card.links = [...new Set([...(card.links || []), other.id])];
         other.links = [...new Set([...(other.links || []), card.id])];
+        if (!wasAlreadyLinked) other.updatedAt = Date.now();
       } else if (wasLinked) {
         card.links = (card.links || []).filter(id => id !== other.id);
+        const oldLength = (other.links || []).length;
         other.links = (other.links || []).filter(id => id !== card.id);
+        if (other.links.length !== oldLength) other.updatedAt = Date.now();
       }
     }
   }
@@ -512,6 +824,89 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toast.classList.remove('visible'), 2400);
   }
+  function insertAtSelection(textarea, before, after = before, placeholder = '文字') {
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = textarea.value.slice(start, end) || placeholder;
+    const insertion = `${before}${selected}${after}`;
+    textarea.setRangeText(insertion, start, end, 'select');
+    textarea.focus();
+    textarea.setSelectionRange(start + before.length, start + before.length + selected.length);
+  }
+  async function readImageForCard(file) {
+    if (!/^image\/(png|jpeg|webp|gif)$/i.test(file.type)) throw new Error('请使用 PNG、JPEG、WebP 或 GIF 图片。');
+    if (file.type === 'image/gif') {
+      if (file.size > 300 * 1024) throw new Error('GIF 文件较大，请压缩到 300 KB 以下再插入。');
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('无法读取图片文件。'));
+        reader.readAsDataURL(file);
+      });
+    }
+    const source = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('无法读取图片文件。'));
+      reader.readAsDataURL(file);
+    });
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('图片格式无法识别。'));
+      element.src = source;
+    });
+    const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    const compact = canvas.toDataURL('image/webp', 0.78);
+    if (compact.length > 700_000) throw new Error('压缩后的图片仍较大。请缩小图片后重试，以免占满本机存储。');
+    return compact;
+  }
+  async function insertImageFile(file, textarea = $('#back-input'), start = textarea.selectionStart, end = textarea.selectionEnd) {
+    const dataUrl = await readImageForCard(file);
+    const safeName = (file.name || '截图').replace(/[\\()[\]]/g, '').trim() || '截图';
+    textarea.setRangeText(`![${safeName}](${dataUrl})`, start, end, 'end');
+    textarea.focus();
+    notify('图片已插入，保存卡片后会保存在本机');
+  }
+  $$('[data-insert-format]').forEach(button => button.addEventListener('click', () => {
+    const formats = {
+      bold: ['**', '**', '加粗文字'],
+      italic: ['*', '*', '斜体文字'],
+      highlight: ['==', '==', '高亮文字'],
+      'inline-math': ['$ ', ' $', 'x^2'],
+      'display-math': ['$$\n', '\n$$', 'x^2'],
+      code: ['`', '`', '代码'],
+      'code-block': ['```\n', '\n```', '代码']
+    };
+    const [before, after, placeholder] = formats[button.dataset.insertFormat];
+    insertAtSelection($('#back-input'), before, after, placeholder);
+  }));
+  $('#insert-image').addEventListener('click', () => $('#image-file').click());
+  $('#image-file').addEventListener('change', async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const button = $('#insert-image');
+    button.disabled = true;
+    try {
+      await insertImageFile(file);
+    } catch (error) { notify(error.message || '无法插入这张图片'); }
+    finally { button.disabled = false; event.target.value = ''; }
+  });
+  $('#back-input').addEventListener('paste', async event => {
+    const imageItem = [...(event.clipboardData?.items || [])].find(item => item.kind === 'file' && item.type.startsWith('image/'));
+    const file = imageItem?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    const textarea = event.currentTarget;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    try { await insertImageFile(file, textarea, start, end); }
+    catch (error) { notify(error.message || '无法插入剪贴板中的图片'); }
+  });
   function saveEditor(event) {
     event.preventDefault();
     const front = $('#front-input').value.trim();
@@ -535,8 +930,13 @@
     const card = cards.find(item => item.id === activeCardId);
     if (!card) return;
     if (!confirm(`删除「${card.front}」？相关卡片之间的连接也会移除。`)) return;
+    markCardDeleted(activeCardId);
     cards = cards.filter(item => item.id !== activeCardId);
-    cards.forEach(item => { item.links = (item.links || []).filter(id => id !== activeCardId); });
+    cards.forEach(item => {
+      const previousLength = (item.links || []).length;
+      item.links = (item.links || []).filter(id => id !== activeCardId);
+      if (item.links.length !== previousLength) item.updatedAt = Date.now();
+    });
     saveCards(); closeModal($('#detail-modal')); render(); notify('卡片已删除');
   }
   function exportData() {
@@ -549,15 +949,17 @@
   async function importData(file) {
     try {
       const dataset = normalizeCardDataset(JSON.parse(await file.text()));
+      const incomingIds = new Set(dataset.cards.map(card => card.id));
+      cards.filter(card => !incomingIds.has(card.id)).forEach(card => markCardDeleted(card.id));
       cards = dataset.cards;
       customTags = dataset.tags;
       saveCards(); saveTags(); render(); notify(`已导入 ${cards.length} 张卡片`);
-      setStorageNote('已导入本机 · 导出并上传后同步到其他设备');
+      setStorageNote(currentUser ? '已导入本机 · 正在同步云端' : '已导入本机 · 登录后同步到云端');
     } catch (error) { notify('无法导入：请选一个知点 JSON 备份文件'); }
     $('#import-file').value = '';
   }
 
-  $$('.nav-item').forEach(button => button.addEventListener('click', () => openView(button.dataset.view)));
+  $$('.nav-item').forEach(button => button.addEventListener('click', () => button.dataset.view === 'roam' ? startRoam() : openView(button.dataset.view)));
   $$('[data-open-stats]').forEach(button => button.addEventListener('click', () => openView('stats')));
   $$('[data-open-view]').forEach(button => button.addEventListener('click', () => openView(button.dataset.openView)));
   $$('[data-open-tags]').forEach(button => button.addEventListener('click', () => { openView('all'); $('#manage-tags').focus(); }));
@@ -625,6 +1027,20 @@
   $('#import-file').addEventListener('change', event => { if (event.target.files?.[0]) importData(event.target.files[0]); });
   $('#mobile-menu').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
   document.addEventListener('keydown', event => {
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && !$('#editor-modal').hidden && event.target === $('#back-input')) {
+      const key = event.key.toLowerCase();
+      const shortcuts = {
+        'b:false': ['**', '**', '加粗文字'],
+        'i:false': ['*', '*', '斜体文字'],
+        'h:true': ['==', '==', '高亮文字'],
+        'm:true': ['$ ', ' $', 'x^2'],
+        'd:true': ['$$\n', '\n$$', 'x^2'],
+        'e:false': ['`', '`', '代码'],
+        'e:true': ['```\n', '\n```', '代码']
+      };
+      const format = shortcuts[`${key}:${event.shiftKey}`];
+      if (format) { event.preventDefault(); insertAtSelection($('#back-input'), ...format); return; }
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#search-input').focus(); }
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !$('#editor-modal').hidden) $('#card-form').requestSubmit();
     if (event.key === 'Escape') {
@@ -635,5 +1051,5 @@
     }
   });
   render();
-  initializePublishedCards();
+  initializePublishedCards().then(initializeCloudAuth);
 })();

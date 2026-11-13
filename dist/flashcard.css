@@ -1148,3 +1148,36 @@ body { font-size: var(--type-body); }
   .related-card-list { grid-template-columns: 1fr; gap: 7px; }
   .related-result-card { min-height: 78px; padding: 10px 11px; }
 }
+
+/* Keep long tags readable and make roam history controls easy to tap. */
+.flashcard-shell .flashcard-face-label { min-width: 0; }
+.flashcard-shell .face-label-main { flex: 1 1 auto; overflow: hidden; }
+.flashcard-shell .face-label-main .tag-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(150px, 38vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-navigation { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 14px; padding: 0 22px 14px; }
+.card-nav-arrow {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #dfe5d9;
+  border-radius: 50%;
+  background: #f4f6f0;
+  color: #4f6b4d;
+  font-size: 22px;
+  line-height: 1;
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.card-nav-arrow:hover:not(:disabled) { transform: translateY(-1px); border-color: #b9c9b2; background: #e9f0e5; }
+.card-nav-arrow:disabled { opacity: .38; cursor: not-allowed; }
+@media (max-width: 640px) {
+  .flashcard-shell .face-label-main .tag-pill { max-width: min(150px, 38vw); }
+  .card-navigation { padding-right: 18px; padding-left: 18px; }
+  .card-nav-arrow { width: 46px; height: 46px; font-size: 24px; }
+}

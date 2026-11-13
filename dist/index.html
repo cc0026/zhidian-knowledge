@@ -16,6 +16,8 @@
     <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js" integrity="sha384-a1WQdjRj162i159OYq041X6I4K8NenkrI09LlPmiHg0YOb7CR+wJOraXwK9abpnE" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-config.js"></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -30,6 +32,7 @@
           <button class="nav-item active" data-view="all"><span class="nav-icon icon-grid">▦</span><span>所有卡片</span><span class="nav-count" id="nav-total">0</span></button>
           <button class="nav-item" data-view="recent"><span class="nav-icon">↺</span><span>最近编辑</span></button>
           <button class="nav-item" data-view="fuzzy"><span class="nav-icon icon-spark">✳</span><span>还不熟悉</span><span class="nav-count muted-count" id="nav-fuzzy">0</span></button>
+          <button class="nav-item" data-view="roam"><span class="nav-icon">⤨</span><span>漫游</span></button>
           <button class="nav-item" data-view="stats"><span class="nav-icon">▤</span><span>统计</span></button>
         </nav>
         <div class="sidebar-section">
@@ -53,7 +56,7 @@
           <div class="breadcrumb"><span>知识空间</span><span class="crumb-slash">/</span><strong id="breadcrumb-current">所有卡片</strong></div>
           <div class="top-actions">
             <label class="search-box" for="search-input"><span class="search-icon">⌕</span><input id="search-input" type="search" placeholder="搜索概念、解释、标签…" autocomplete="off" /><kbd>⌘ K</kbd></label>
-            <button class="avatar" title="个人知识库">知</button>
+            <button class="avatar" id="account-button" title="账号与云端同步">知</button>
           </div>
         </header>
 
@@ -65,6 +68,14 @@
               <p class="page-subtitle">知识不是孤岛。写下来，连起来，随时找回来。</p>
             </div>
             <button class="button primary-button" id="new-card"><span class="plus-sign">＋</span> 新建卡片</button>
+          </section>
+
+          <section class="roam-view" id="roam-view" hidden aria-labelledby="roam-title">
+            <div class="roam-symbol" aria-hidden="true">⤨</div>
+            <span class="eyebrow"><span class="eyebrow-line"></span> A LITTLE SERENDIPITY</span>
+            <h2 id="roam-title">让下一张卡片，<em>带你想到别处。</em></h2>
+            <p>从知识库中随机打开一张卡片，翻开答案，再继续漫游。</p>
+            <button class="button primary-button" id="roam-random-card"><span>⤨</span> 随机打开一张</button>
           </section>
 
           <section class="overview-strip" id="overview-strip" aria-label="知识库概览">
@@ -143,6 +154,10 @@
               </div>
             </div>
           </div>
+          <div class="card-navigation" id="card-navigation" aria-label="卡片导航">
+            <button class="card-nav-arrow" id="previous-card" type="button" aria-label="上一张" title="上一张">←</button>
+            <button class="card-nav-arrow" id="next-card" type="button" aria-label="下一张" title="下一张">→</button>
+          </div>
         </div>
       </section>
     </div>
@@ -179,7 +194,21 @@
         <div class="modal-topline"><div><span class="modal-kicker">MAKE A CONNECTION</span><h2 id="editor-title">新建知识卡片</h2></div><button class="icon-button close-modal" data-close aria-label="关闭">×</button></div>
         <form id="card-form">
           <label class="form-field"><span>正面 <small>提示 / 概念</small></span><textarea id="front-input" rows="2" placeholder="例如：什么是贝叶斯定理？" required></textarea></label>
-          <label class="form-field"><span>反面 <small>支持 Markdown 和 LaTeX 公式</small></span><textarea id="back-input" rows="5" placeholder="可使用标题、粗体、列表、引用、代码块等 Markdown 语法；公式用 $...$ 或 $$...$$" required></textarea></label>
+          <div class="form-field editor-content-field"><span>反面 <small>支持 Markdown 和 LaTeX 公式</small></span>
+            <div class="editor-toolbar" role="toolbar" aria-label="编辑格式">
+              <button type="button" data-insert-format="bold" title="加粗（⌘/Ctrl+B）"><strong>B</strong><span>加粗</span></button>
+              <button type="button" data-insert-format="italic" title="斜体（⌘/Ctrl+I）"><em>I</em><span>斜体</span></button>
+              <button type="button" data-insert-format="highlight" title="高亮（⌘/Ctrl+Shift+H）"><span class="highlight-icon">H</span><span>高亮</span></button>
+              <button type="button" data-insert-format="inline-math" title="行内公式（⌘/Ctrl+Shift+M）">∑<span>行内公式</span></button>
+              <button type="button" data-insert-format="display-math" title="行间公式（⌘/Ctrl+Shift+D）">∫<span>行间公式</span></button>
+              <button type="button" data-insert-format="code" title="行内代码（⌘/Ctrl+E）">&lt;/&gt;<span>代码</span></button>
+              <button type="button" data-insert-format="code-block" title="代码块（⌘/Ctrl+Shift+E）">▤<span>代码块</span></button>
+              <button type="button" id="insert-image" title="上传图片，也可在编辑框中粘贴截图">▧<span>图片</span></button>
+              <input type="file" id="image-file" accept="image/*" hidden />
+              <span class="toolbar-hint">可在此粘贴截图 · 图片随卡片保存在本机</span>
+            </div>
+            <textarea id="back-input" rows="5" placeholder="可使用标题、粗体、列表、引用、代码块等 Markdown 语法；公式用 $...$ 或 $$...$$" required></textarea>
+          </div>
           <div class="form-row">
             <label class="form-field"><span>主题标签 <small>一个标签</small></span><input id="tag-input" list="known-tags" placeholder="例如：统计学" /><datalist id="known-tags"></datalist></label>
             <label class="form-field"><span>掌握程度</span><select id="mastery-input"><option value="known">已掌握</option><option value="partial">模糊</option><option value="fuzzy">不认识</option></select></label>
@@ -198,6 +227,23 @@
           <div class="form-error" id="tag-form-error" role="alert"></div>
           <div class="modal-footer"><span class="save-hint">创建后可在卡片编辑中选择</span><div><button type="button" class="button cancel-button" data-close>取消</button><button type="submit" class="button primary-button">创建标签</button></div></div>
         </form>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="account-modal" hidden>
+      <section class="modal account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title">
+        <div class="modal-topline"><div><span class="modal-kicker">ACCOUNT & SYNC</span><h2 id="account-title">账号与云端同步</h2></div><button class="icon-button close-modal" data-close aria-label="关闭账号窗口">×</button></div>
+        <p class="account-description">登录后，卡片会同步到你的私有云端空间。当前浏览器仍保留本机副本。</p>
+        <div class="account-state" id="account-state" role="status">尚未连接云端</div>
+        <form id="account-form">
+          <label class="form-field"><span>邮箱</span><input type="email" id="account-email" autocomplete="email" required /></label>
+          <label class="form-field"><span>密码</span><input type="password" id="account-password" autocomplete="current-password" required /></label>
+          <div class="account-actions"><button class="button primary-button" id="sign-in-button" type="submit">登录</button><button class="button secondary-button" id="sign-up-button" type="button">创建账号</button></div>
+        </form>
+        <div class="account-actions account-cloud-actions" id="account-cloud-actions" hidden>
+          <button class="button primary-button" id="sync-now-button" type="button">立即同步</button>
+          <button class="button secondary-button" id="sign-out-button" type="button">退出登录</button>
+        </div>
+        <p class="account-footnote">如果注册确认邮件没有送达，需要在 Supabase 配置 SMTP。不要在此输入数据库密码。</p>
       </section>
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

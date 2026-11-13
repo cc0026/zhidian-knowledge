@@ -4,9 +4,9 @@
   const TOMBSTONE_KEY = 'zhidian.knowledge.deleted.v1';
   const PUBLISHED_CARDS_URL = './cards/cards.json';
   const cloudConfig = window.ZHIDIAN_SUPABASE_CONFIG || {};
-  const supabase = window.supabase?.createClient && cloudConfig.url && cloudConfig.publishableKey
-    ? window.supabase.createClient(cloudConfig.url, cloudConfig.publishableKey)
-    : null;
+  let supabase = null;
+  let supabaseLoadPromise = null;
+  let answerToolsLoadPromise = null;
   const masteryLabels = { fuzzy: '不认识', partial: '模糊', known: '已掌握' };
   const seedCards = [
     { id: 'seed-bayes', front: '贝叶斯定理在回答什么问题？', back: '它描述如何根据新证据更新一个假设的可信度。\n\nP(A|B) = P(B|A) × P(A) / P(B)', tag: '统计学', mastery: 'partial', links: ['seed-base-rate'], updatedAt: Date.now() - 1000 * 60 * 28 },
@@ -19,6 +19,36 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  async function loadSupabaseClient() {
+    if (supabase) return supabase;
+    if (!cloudConfig.url || !cloudConfig.publishableKey) throw new Error('Supabase 配置缺失。');
+    if (!supabaseLoadPromise) {
+      supabaseLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        script.async = true;
+        const timeout = setTimeout(() => {
+          script.remove();
+          reject(new Error('云端组件加载超时。本机卡片仍可使用，请检查网络后重试。'));
+        }, 9000);
+        script.onload = () => {
+          clearTimeout(timeout);
+          if (!window.supabase?.createClient) { reject(new Error('云端组件无法启动。')); return; }
+          try {
+            supabase = window.supabase.createClient(cloudConfig.url, cloudConfig.publishableKey);
+            resolve(supabase);
+          } catch (error) { reject(error); }
+        };
+        script.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('无法连接云端组件。本机卡片仍可使用，请检查网络后重试。'));
+        };
+        document.head.append(script);
+      });
+    }
+    try { return await supabaseLoadPromise; }
+    catch (error) { supabaseLoadPromise = null; throw error; }
+  }
   let storageScope = '';
   let currentUser = null;
   let cloudSyncTimer = null;
@@ -119,9 +149,13 @@
     };
   }
   async function fetchPublishedDataset() {
-    const response = await fetch(`${PUBLISHED_CARDS_URL}?v=${Date.now()}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`读取 GitHub 卡片失败（${response.status}）`);
-    return normalizeCardDataset(await response.json());
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    try {
+      const response = await fetch(`${PUBLISHED_CARDS_URL}?v=${Date.now()}`, { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error(`读取 GitHub 卡片失败（${response.status}）`);
+      return normalizeCardDataset(await response.json());
+    } finally { clearTimeout(timeout); }
   }
   async function initializePublishedCards() {
     if (localStorage.getItem(storageKey(STORE_KEY))) {
@@ -320,31 +354,35 @@
     await syncCloud({ legacyCards: hasAccountCopy ? null : guestCards, legacyTags: hasAccountCopy ? null : guestTags, initialLogin: !hasAccountCopy });
   }
   async function initializeCloudAuth() {
-    if (!supabase) {
-      setAccountState('云端配置未加载，请检查网络或 Supabase 配置。', true);
-      return;
-    }
     updateAccountUi();
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setTimeout(() => handleAuthSession(session), 0);
-    });
+    setAccountState('正在连接云端账号…');
+    try {
+      const client = await loadSupabaseClient();
+      client.auth.onAuthStateChange((_event, session) => {
+        setTimeout(() => handleAuthSession(session), 0);
+      });
+    } catch (error) { setAccountState(error.message || '云端暂不可用，本机卡片仍可使用。', true); }
   }
   $('#account-button').addEventListener('click', () => openModal($('#account-modal')));
   $('#account-form').addEventListener('submit', async event => {
     event.preventDefault();
-    if (!supabase) { setAccountState('Supabase 客户端未加载，请检查网络后重试。', true); return; }
-    const { error } = await supabase.auth.signInWithPassword({ email: $('#account-email').value.trim(), password: $('#account-password').value });
-    if (error) setAccountState(error.message, true);
+    try {
+      const client = await loadSupabaseClient();
+      const { error } = await client.auth.signInWithPassword({ email: $('#account-email').value.trim(), password: $('#account-password').value });
+      if (error) setAccountState(error.message, true);
+    } catch (error) { setAccountState(error.message || '云端暂不可用，请检查网络后重试。', true); }
   });
   $('#sign-up-button').addEventListener('click', async () => {
-    if (!supabase) { setAccountState('Supabase 客户端未加载，请检查网络后重试。', true); return; }
     const email = $('#account-email').value.trim();
     const password = $('#account-password').value;
     if (!email || password.length < 8) { setAccountState('请填写邮箱，并设置至少 8 位密码。', true); return; }
-    const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href } });
-    if (error) setAccountState(error.message, true);
-    else if (!data.session) setAccountState('账号已创建。请查收确认邮件，再回到这里登录。');
-    else setAccountState('账号已创建，正在准备同步…');
+    try {
+      const client = await loadSupabaseClient();
+      const { data, error } = await client.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href } });
+      if (error) setAccountState(error.message, true);
+      else if (!data.session) setAccountState('账号已创建。请查收确认邮件，再回到这里登录。');
+      else setAccountState('账号已创建，正在准备同步…');
+    } catch (error) { setAccountState(error.message || '云端暂不可用，请检查网络后重试。', true); }
   });
   $('#sync-now-button').addEventListener('click', () => {
     cloudSyncDeclined = false;
@@ -354,7 +392,7 @@
     } else syncCloud();
   });
   $('#sign-out-button').addEventListener('click', async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase?.auth.signOut() || { error: new Error('云端暂不可用。') };
     if (error) setAccountState(error.message, true);
     else { closeModal($('#account-modal')); notify('已退出登录，本机卡片仍保留'); }
   });
@@ -608,6 +646,36 @@
     });
     return html;
   }
+  function loadAnswerScript(src, integrity = '') {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      if (integrity) script.integrity = integrity;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('卡片排版组件暂不可用。'));
+      document.head.append(script);
+    });
+  }
+  function ensureAnswerTools() {
+    if (window.marked?.parse && window.DOMPurify?.sanitize && window.renderMathInElement) return Promise.resolve();
+    if (!answerToolsLoadPromise) {
+      const stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.css';
+      stylesheet.integrity = 'sha384-WwGtaC6ywCHxA5cstpj/3+xIZvTez8dq2IcBQaXRkenHZ7FVVq1ZROtURwfbtTlG';
+      stylesheet.crossOrigin = 'anonymous';
+      document.head.append(stylesheet);
+      answerToolsLoadPromise = Promise.all([
+        window.marked?.parse ? Promise.resolve() : loadAnswerScript('https://cdn.jsdelivr.net/npm/marked@18.2.0/lib/marked.umd.js'),
+        window.DOMPurify?.sanitize ? Promise.resolve() : loadAnswerScript('https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js')
+      ]).then(() => window.katex?.render ? undefined : loadAnswerScript('https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js', 'sha384-a1WQdjRj162i159OYq041X6I4K8NenkrI09LlPmiHg0YOb7CR+wJOraXwK9abpnE'))
+        .then(() => window.renderMathInElement ? undefined : loadAnswerScript('https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js', 'sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz'))
+        .catch(error => { answerToolsLoadPromise = null; throw error; });
+    }
+    return answerToolsLoadPromise;
+  }
   function renderAnswerMath(element) {
     if (typeof window.renderMathInElement !== 'function') return;
     window.renderMathInElement(element, {
@@ -695,6 +763,11 @@
     const answer = $('#detail-answer');
     answer.innerHTML = renderMarkdownAnswer(card.back);
     renderAnswerMath(answer);
+    ensureAnswerTools().then(() => {
+      if (activeCardId !== id || $('#detail-modal').hidden) return;
+      answer.innerHTML = renderMarkdownAnswer(card.back);
+      renderAnswerMath(answer);
+    }).catch(error => console.info(error.message));
     $('#flashcard-front-face').hidden = false;
     $('#flashcard-back-face').hidden = true;
     $('#detail-flashcard').dataset.face = 'front';
@@ -1062,5 +1135,6 @@
     }
   });
   render();
-  initializePublishedCards().then(initializeCloudAuth);
+  initializePublishedCards();
+  initializeCloudAuth();
 })();

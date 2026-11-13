@@ -75,10 +75,15 @@
   let activeCardId = null;
   let activeRelatedCards = [];
   let editorCardId = null;
+  let editorInitialState = null;
   let selectedLinks = new Set();
   let newestFirst = true;
   let toastTimer;
   let modalScrollLockY = null;
+  let contextCardId = null;
+  let contextInvoker = null;
+  let longPressTimer = null;
+  let suppressCardClick = false;
   let roamHistory = [];
   let roamHistoryIndex = -1;
 
@@ -506,15 +511,59 @@
   function renderCards() {
     const list = getVisibleCards();
     const grid = $('#card-grid');
-    grid.innerHTML = list.map(card => `<article class="knowledge-card" tabindex="0" role="button" aria-label="打开卡片：${escapeHtml(card.front)}" data-card-id="${escapeHtml(card.id)}">
-      <div class="card-top"><span class="card-tag"><span class="card-tag-dot"></span>${escapeHtml(card.tag || '未分类')}</span><span class="mastery-pill mastery-${card.mastery}">${masteryLabels[card.mastery]}</span></div>
+    grid.innerHTML = list.map(card => `<article class="knowledge-card" tabindex="0" aria-label="卡片：${escapeHtml(card.front)}。按 Enter 打开，按 Shift+F10 查看操作" data-card-id="${escapeHtml(card.id)}">
+      <div class="card-top"><span class="card-tag"><span class="card-tag-dot"></span>${escapeHtml(card.tag || '未分类')}</span><span class="mastery-pill mastery-${card.mastery}">${masteryLabels[card.mastery]}</span><button class="icon-button tiny card-more-button" type="button" aria-label="卡片操作：${escapeHtml(card.front)}" aria-haspopup="menu" title="卡片操作">⋯</button></div>
       <h3 class="card-title">${escapeHtml(card.front)}</h3>
       <div class="card-bottom"><span class="connection-indicator"><span class="connection-glyph">⌘</span>${connectedCount(card)} 个连接</span><span class="card-date">${relativeDate(card.updatedAt)}</span><span class="card-open-hint">↗</span></div>
     </article>`).join('');
     $$('.knowledge-card', grid).forEach(element => {
       const open = () => openDetail(element.dataset.cardId);
-      element.addEventListener('click', open);
-      element.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+      element.addEventListener('click', event => {
+        if (event.target.closest('.card-more-button')) return;
+        if (suppressCardClick) { suppressCardClick = false; event.preventDefault(); return; }
+        open();
+      });
+      element.addEventListener('keydown', event => {
+        if (event.target !== element) return;
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+        else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault();
+          const bounds = element.getBoundingClientRect();
+          openCardContextMenu(element.dataset.cardId, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, element, true);
+        }
+      });
+      element.querySelector('.card-more-button').addEventListener('click', event => {
+        event.stopPropagation();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        openCardContextMenu(element.dataset.cardId, bounds.right, bounds.bottom, event.currentTarget, true);
+      });
+      element.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        openCardContextMenu(element.dataset.cardId, event.clientX, event.clientY, element, true);
+      });
+      element.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'touch' || event.target.closest('button')) return;
+        const cardId = element.dataset.cardId;
+        const x = event.clientX;
+        const y = event.clientY;
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+          suppressCardClick = true;
+          openCardContextMenu(cardId, x, y, element, true);
+          setTimeout(() => { suppressCardClick = false; }, 1200);
+        }, 520);
+      });
+      element.addEventListener('pointermove', event => {
+        if (event.pointerType !== 'touch' || !longPressTimer) return;
+        if (Math.abs(event.movementX) + Math.abs(event.movementY) > 12) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(type => element.addEventListener(type, () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }));
     });
     $('#result-count').textContent = `${list.length} 个知识点`;
     $('#empty-state').hidden = list.length !== 0;
@@ -523,6 +572,26 @@
     $('#empty-title').textContent = noData ? '这里还没有知识卡片' : '没有找到匹配的卡片';
     $('#empty-copy').textContent = noData ? '从一个最近想起的概念开始，把它记下来。' : '试试其他关键词，或清除当前筛选条件。';
     $('#empty-create').hidden = !noData;
+  }
+  function openCardContextMenu(cardId, x, y, invoker, focusFirst = false) {
+    if (!cards.some(card => card.id === cardId)) return;
+    const menu = $('#card-context-menu');
+    contextCardId = cardId;
+    contextInvoker = invoker || null;
+    menu.hidden = false;
+    const margin = 8;
+    const bounds = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(margin, Math.min(x, innerWidth - bounds.width - margin))}px`;
+    menu.style.top = `${Math.max(margin, Math.min(y, innerHeight - bounds.height - margin))}px`;
+    if (focusFirst) $('[data-context-action="edit"]', menu).focus();
+  }
+  function closeCardContextMenu(restoreFocus = false) {
+    const menu = $('#card-context-menu');
+    if (menu.hidden) return;
+    menu.hidden = true;
+    contextCardId = null;
+    if (restoreFocus && contextInvoker?.isConnected) contextInvoker.focus();
+    contextInvoker = null;
   }
   function syncNav() { $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view && !selectedTag)); }
   function render() {
@@ -536,7 +605,6 @@
     $('#welcome-row').hidden = statsOpen || roamOpen;
     if (statsOpen) renderStatistics();
     renderCards(); syncNav();
-    if (!$('#detail-modal').hidden && activeCardId) syncCardNavigation(activeCardId);
   }
   function openModal(element) {
     element.hidden = false;
@@ -746,7 +814,6 @@
     $('#flashcard-front-face').hidden = false;
     $('#flashcard-back-face').hidden = true;
     $('#detail-flashcard').dataset.face = 'front';
-    syncCardNavigation(id);
     renderConnections(card);
     openModal($('#detail-modal'));
   }
@@ -755,16 +822,6 @@
     const visible = getVisibleCards();
     if (visible.some(card => card.id === activeCardId)) return visible;
     return [...cards].sort((a, b) => newestFirst ? b.updatedAt - a.updatedAt : a.front.localeCompare(b.front, 'zh-Hans'));
-  }
-  function syncCardNavigation(id = activeCardId) {
-    const previous = $('#previous-card');
-    const next = $('#next-card');
-    const list = getCardNavigationList();
-    const index = list.findIndex(card => card.id === id);
-    previous.disabled = index <= 0;
-    next.disabled = view === 'roam'
-      ? (roamHistoryIndex >= roamHistory.length - 1 && cards.length < 2)
-      : (index < 0 || index >= list.length - 1);
   }
   function openRandomCard() {
     if (!cards.length) { notify('还没有卡片可以漫游'); return; }
@@ -814,8 +871,22 @@
     openRandomCard();
   }
   $('#roam-random-card').addEventListener('click', () => cards.length ? openRandomCard() : openEditor());
-  $('#previous-card').addEventListener('click', showPreviousCard);
-  $('#next-card').addEventListener('click', showNextCard);
+  let cardSwipeStart = null;
+  $('#detail-flashcard').addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'touch' || event.target.closest('button,a,input,textarea,select,[contenteditable="true"]')) return;
+    cardSwipeStart = { x: event.clientX, y: event.clientY };
+  });
+  $('#detail-flashcard').addEventListener('pointerup', event => {
+    if (event.pointerType !== 'touch' || !cardSwipeStart) return;
+    const deltaX = event.clientX - cardSwipeStart.x;
+    const deltaY = event.clientY - cardSwipeStart.y;
+    cardSwipeStart = null;
+    if (Math.abs(deltaX) < 55 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+    event.preventDefault();
+    if (deltaX < 0) showNextCard();
+    else showPreviousCard();
+  });
+  $('#detail-flashcard').addEventListener('pointercancel', () => { cardSwipeStart = null; });
   $('#flip-card').addEventListener('click', () => {
     $('#flashcard-front-face').hidden = true;
     $('#flashcard-back-face').hidden = false;
@@ -840,8 +911,30 @@
     $('#form-error').textContent = '';
     selectedLinks = new Set((card?.links || []).filter(link => link !== id));
     renderRelationPicker();
+    editorInitialState = currentEditorState();
     openModal($('#editor-modal'));
     setTimeout(() => $('#front-input').focus(), 60);
+  }
+  function currentEditorState() {
+    return JSON.stringify({
+      front: $('#front-input').value,
+      back: $('#back-input').value,
+      tag: $('#tag-input').value,
+      mastery: $('#mastery-input').value,
+      links: [...selectedLinks].sort()
+    });
+  }
+  function requestCloseModal(backdrop) {
+    if (!backdrop || backdrop.hidden) return false;
+    if (backdrop.id === 'editor-modal' && editorInitialState !== null && currentEditorState() !== editorInitialState) {
+      if (!confirm('有尚未保存的更改。确定放弃并关闭吗？')) return false;
+    }
+    closeModal(backdrop);
+    if (backdrop.id === 'editor-modal') {
+      editorCardId = null;
+      editorInitialState = null;
+    }
+    return true;
   }
   function renderRelationPicker() {
     const currentId = editorCardId;
@@ -982,19 +1075,21 @@
     render();
     notify(editorCardId ? '卡片已更新' : '卡片已保存');
     editorCardId = null;
+    editorInitialState = null;
   }
-  function deleteActiveCard() {
-    const card = cards.find(item => item.id === activeCardId);
+  function deleteCard(id) {
+    const card = cards.find(item => item.id === id);
     if (!card) return;
     if (!confirm(`删除「${card.front}」？相关卡片之间的连接也会移除。`)) return;
-    markCardDeleted(activeCardId);
-    cards = cards.filter(item => item.id !== activeCardId);
+    markCardDeleted(id);
+    cards = cards.filter(item => item.id !== id);
     cards.forEach(item => {
       const previousLength = (item.links || []).length;
-      item.links = (item.links || []).filter(id => id !== activeCardId);
+      item.links = (item.links || []).filter(linkId => linkId !== id);
       if (item.links.length !== previousLength) item.updatedAt = Date.now();
     });
-    saveCards(); closeModal($('#detail-modal')); render(); notify('卡片已删除');
+    if (activeCardId === id) closeModal($('#detail-modal'));
+    saveCards(); render(); notify('卡片已删除');
   }
   function exportData() {
     const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards, tags: customTags }, null, 2)], { type: 'application/json' });
@@ -1026,7 +1121,19 @@
   $('#stats-new-card').addEventListener('click', () => openEditor());
   $('#empty-create').addEventListener('click', () => openEditor());
   $$('[data-card-action="edit"]').forEach(button => button.addEventListener('click', () => { const id = activeCardId; closeModal($('#detail-modal')); openEditor(id); }));
-  $$('[data-card-action="delete"]').forEach(button => button.addEventListener('click', deleteActiveCard));
+  $$('[data-context-action="edit"]').forEach(button => button.addEventListener('click', () => {
+    const id = contextCardId;
+    closeCardContextMenu();
+    if (id) openEditor(id);
+  }));
+  $$('[data-context-action="delete"]').forEach(button => button.addEventListener('click', () => {
+    const id = contextCardId;
+    closeCardContextMenu();
+    if (id) deleteCard(id);
+  }));
+  document.addEventListener('click', event => {
+    if (!$('#card-context-menu').hidden && !event.target.closest('#card-context-menu,.card-more-button')) closeCardContextMenu();
+  });
   $$('[data-mastery-option]').forEach(button => button.addEventListener('click', () => {
     const card = cards.find(item => item.id === activeCardId);
     if (!card || card.mastery === button.dataset.masteryOption) return;
@@ -1050,8 +1157,8 @@
   });
   $('#card-form').addEventListener('submit', saveEditor);
   $('#relation-search').addEventListener('input', renderRelationPicker);
-  $$('.close-modal,[data-close]').forEach(button => button.addEventListener('click', () => { closeModal(button.closest('.modal-backdrop')); if (button.closest('#editor-modal')) editorCardId = null; }));
-  $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) { closeModal(backdrop); if (backdrop.id === 'editor-modal') editorCardId = null; } }));
+  $$('.close-modal,[data-close]').forEach(button => button.addEventListener('click', () => requestCloseModal(button.closest('.modal-backdrop'))));
+  $$('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click', event => { if (event.target === backdrop) requestCloseModal(backdrop); }));
   $('#sort-button').addEventListener('click', () => { newestFirst = !newestFirst; $('#sort-button').innerHTML = `<span>☷</span> ${newestFirst ? '最近更新' : '按名称'} <span class="sort-chevron">⌄</span>`; renderCards(); });
   function openTagCreator() {
     $('#tag-name-input').value = '';
@@ -1101,10 +1208,18 @@
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#search-input').focus(); }
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !$('#editor-modal').hidden) $('#card-form').requestSubmit();
+    const typingTarget = event.target.closest('input,textarea,select,[contenteditable="true"]');
+    if (!typingTarget && !$('#detail-modal').hidden && $('#editor-modal').hidden && $('#related-modal').hidden && $('#graph-modal').hidden && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); showPreviousCard(); }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); showNextCard(); }
+    }
     if (event.key === 'Escape') {
-      if (!$('#graph-modal').hidden) closeModal($('#graph-modal'));
-      else if (!$('#related-modal').hidden) closeModal($('#related-modal'));
-      else $$('.modal-backdrop').forEach(modal => { if (!modal.hidden) closeModal(modal); });
+      if (!$('#card-context-menu').hidden) closeCardContextMenu(true);
+      else {
+        const visibleModals = $$('.modal-backdrop').filter(modal => !modal.hidden);
+        visibleModals.sort((a, b) => Number(getComputedStyle(a).zIndex) - Number(getComputedStyle(b).zIndex));
+        if (visibleModals.length) requestCloseModal(visibleModals[visibleModals.length - 1]);
+      }
       setSidebarOpen(false);
     }
   });

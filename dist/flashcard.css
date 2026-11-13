@@ -358,6 +358,7 @@ body { font-size: var(--type-body); }
 .flashcard-answer-content p {
   margin: 0 0 12px;
   padding: 0;
+  font-size: inherit;
   white-space: normal;
 }
 
@@ -1015,16 +1016,16 @@ body { font-size: var(--type-body); }
 }
 
 /* Requested card typography scale. */
-.flashcard-answer-content { font-size: 14px; }
-.flashcard-answer-content h1 { font-size: 18px; }
-.flashcard-answer-content h2 { font-size: 16px; }
+.flashcard-answer-content { font-size: 16px; }
+.flashcard-answer-content h1 { font-size: 20px; }
+.flashcard-answer-content h2 { font-size: 18px; }
 .flashcard-answer-content h3,
 .flashcard-answer-content h4,
 .flashcard-answer-content h5,
-.flashcard-answer-content h6 { font-size: 14px; }
-.flashcard-answer-content pre { font-size: 14px; }
-.flashcard-answer-content p code { font-size: 14px; }
-.flashcard-answer-content table { font-size: 14px; }
+.flashcard-answer-content h6 { font-size: 16px; }
+.flashcard-answer-content pre { font-size: 16px; }
+.flashcard-answer-content p code { font-size: 16px; }
+.flashcard-answer-content table { font-size: 16px; }
 .flashcard-shell .flashcard-face-label { font-size: 12px; }
 .flashcard-shell .face-label-main .tag-pill { font-size: 12px; }
 .flashcard-shell .detail-card-actions .text-button { font-size: 12px; }
@@ -1160,26 +1161,8 @@ body { font-size: var(--type-body); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.card-navigation { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 14px; padding: 0 22px 14px; }
-.card-nav-arrow {
-  display: inline-grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid #dfe5d9;
-  border-radius: 50%;
-  background: #f4f6f0;
-  color: #4f6b4d;
-  font-size: 22px;
-  line-height: 1;
-  transition: background .15s, border-color .15s, transform .15s;
-}
-.card-nav-arrow:hover:not(:disabled) { transform: translateY(-1px); border-color: #b9c9b2; background: #e9f0e5; }
-.card-nav-arrow:disabled { opacity: .38; cursor: not-allowed; }
 @media (max-width: 640px) {
   .flashcard-shell .face-label-main .tag-pill { max-width: min(150px, 38vw); }
-  .card-navigation { padding-right: 18px; padding-left: 18px; }
-  .card-nav-arrow { width: 46px; height: 46px; font-size: 24px; }
 }
 
 @media (max-width: 640px) {
@@ -1207,3 +1190,86 @@ body { font-size: var(--type-body); }
   .search-box { width: 38vw; }
   .sidebar { width: min(220px, calc(100vw - 32px)); }
 }
+
+/* Keep card actions discoverable in the gallery and usable by touch. */
+.card-top { gap: 8px; }
+.card-top .card-tag { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-top .mastery-pill { margin-left: auto; }
+.card-more-button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+}
+.card-context-menu {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  width: 176px;
+  padding: 5px;
+  border: 1px solid #e1e2d8;
+  border-radius: 9px;
+  background: #fffefa;
+  box-shadow: 0 10px 30px #1b261d2b;
+}
+.card-context-menu[hidden] { display: none; }
+.card-context-menu button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #465043;
+  text-align: left;
+  font-size: 13px;
+}
+.card-context-menu button:hover,
+.card-context-menu button:focus-visible { background: #edf1e9; }
+.card-context-menu [data-context-action="delete"] { color: #b45e50; }
+.card-context-menu [data-context-action="delete"]:hover,
+.card-context-menu [data-context-action="delete"]:focus-visible { background: #f7ece8; }
+
+@media (max-width: 640px) {
+  #detail-modal {
+    align-items: center;
+    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  }
+  #detail-modal .detail-modal {
+    max-height: 92vh;
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 20px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .flashcard-shell .flashcard-face-label { flex-wrap: wrap; }
+  .flashcard-shell .face-label-main { flex: 1 0 100%; }
+  .flashcard-shell .detail-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+  .flashcard-shell .detail-card-actions .text-button {
+    box-sizing: border-box;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid #e1e5dc;
+    border-radius: 7px;
+    background: #f8f9f5;
+    font-size: 12px;
+  }
+  .flashcard-shell .flashcard-bottom-row { margin-bottom: 20px; }
+  .flashcard-shell .flashcard-front h2 { transform: translateY(-18px); }
+  .card-more-button { flex-basis: 40px; width: 40px; height: 40px; }
+}
+#detail-flashcard { touch-action: pan-y; }
+.flashcard-shell .detail-card-actions .text-button {
+  border: 1px solid #e1e5dc;
+  border-radius: 7px;
+  background: #f8f9f5;
+}
+.flashcard-shell .mastery-option,
+.flashcard-shell .flashcard-bottom-row .related-toggle,
+.flashcard-shell .flashcard-bottom-row .related-toggle-count,
+.flashcard-shell .flashcard-bottom-row .flip-card-button,
+.flashcard-shell .flashcard-bottom-row .flip-card-button span,
+.flashcard-shell .detail-card-actions .text-button { font-size: 14px; }

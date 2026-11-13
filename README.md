@@ -13,7 +13,7 @@ Open the published app at [https://cc0026.github.io/zhidian-knowledge/](https://
 - Search card prompts, explanations, and tags.
 - Add one topic tag and a mastery label to each card.
 - Link related cards and navigate between them.
-- Use the round arrows below any card to move through the current list; in **漫游**, the arrows revisit viewed cards or draw another random card.
+- Swipe left or right on a phone, or use the keyboard arrow keys, to move through cards; in **漫游**, navigation revisits viewed cards or draws another random card.
 - Save cards locally with automatic synchronization across open tabs in the same browser.
 - Sign in with Supabase to sync cards across devices.
 - Export or import a JSON backup.

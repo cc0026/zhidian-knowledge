@@ -10,9 +10,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="./styles.css?v=mobile-auth-20261113b" />
-    <link rel="stylesheet" href="./flashcard.css?v=mobile-auth-20261113b" />
+    <link rel="stylesheet" href="./flashcard.css?v=card-body16-inherit-20261113" />
     <script src="./supabase-config.js"></script>
-    <script src="./app.js?v=cloud-only-20261113" defer></script>
+    <script src="./app.js?v=card-controls-14px-20261113" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -129,7 +129,7 @@
             <div class="flashcard-face flashcard-front" id="flashcard-front-face">
               <div class="flashcard-face-label">
                 <span class="face-label-main"><span>正面 · 提示</span><span class="tag-pill" id="detail-tag"></span></span>
-                <span class="detail-card-actions"><button class="text-button" data-card-action="edit">编辑</button><button class="text-button danger-text" data-card-action="delete">删除</button><button class="icon-button tiny close-modal" data-close aria-label="关闭卡片">×</button></span>
+                <span class="detail-card-actions"><button class="text-button" data-card-action="edit">编辑</button></span>
               </div>
               <h2 id="detail-title"></h2>
               <div class="flashcard-bottom-row">
@@ -141,7 +141,7 @@
             <div class="flashcard-face flashcard-back" id="flashcard-back-face" hidden>
               <div class="flashcard-face-label">
                 <span class="face-label-main">反面 · 解释</span>
-                <span class="detail-card-actions"><button class="text-button" data-card-action="edit">编辑</button><button class="text-button danger-text" data-card-action="delete">删除</button><button class="icon-button tiny close-modal" data-close aria-label="关闭卡片">×</button></span>
+                <span class="detail-card-actions"><button class="text-button" data-card-action="edit">编辑</button></span>
               </div>
               <div class="flashcard-answer-content" id="detail-answer"></div>
               <div class="flashcard-bottom-row">
@@ -151,12 +151,13 @@
               </div>
             </div>
           </div>
-          <div class="card-navigation" id="card-navigation" aria-label="卡片导航">
-            <button class="card-nav-arrow" id="previous-card" type="button" aria-label="上一张" title="上一张">←</button>
-            <button class="card-nav-arrow" id="next-card" type="button" aria-label="下一张" title="下一张">→</button>
-          </div>
         </div>
       </section>
+    </div>
+
+    <div class="card-context-menu" id="card-context-menu" role="menu" aria-label="卡片操作" hidden>
+      <button type="button" role="menuitem" data-context-action="edit">编辑卡片</button>
+      <button type="button" role="menuitem" data-context-action="delete">删除卡片</button>
     </div>
 
     <div class="modal-backdrop related-backdrop" id="related-modal" hidden>

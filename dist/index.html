@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="./styles.css?v=mobile-auth-20261113b" />
     <link rel="stylesheet" href="./flashcard.css?v=mobile-auth-20261113b" />
     <script src="./supabase-config.js"></script>
-    <script src="./app.js?v=mobile-auth-20261113b" defer></script>
+    <script src="./app.js?v=cloud-only-20261113" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -38,9 +38,8 @@
           <button class="add-tag-link" id="add-tag"><span>＋</span> 新建标签</button>
         </div>
         <div class="sidebar-bottom">
-          <div class="local-note"><span class="local-dot"></span><span id="storage-note">本机编辑 · 导出后上传到 GitHub</span></div>
-          <button class="sidebar-action" id="load-published"><span>↻</span> 从 GitHub 载入卡片</button>
-          <button class="sidebar-action" id="export-data"><span>↥</span> 导出 cards.json</button>
+          <div class="local-note"><span class="local-dot"></span><span id="storage-note">本机编辑 · 登录后同步到云端</span></div>
+          <button class="sidebar-action" id="export-data"><span>↥</span> 导出 JSON 备份</button>
           <button class="sidebar-action" id="import-data"><span>↧</span> 导入备份</button>
           <input type="file" id="import-file" accept="application/json,.json" hidden />
           <div class="sidebar-footer"><span class="footer-sigil">知</span><span>一点一点，连成所知</span></div>

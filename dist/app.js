@@ -2,7 +2,6 @@
   const STORE_KEY = 'zhidian.knowledge.v1';
   const TAG_STORE_KEY = 'zhidian.knowledge.tags.v1';
   const TOMBSTONE_KEY = 'zhidian.knowledge.deleted.v1';
-  const PUBLISHED_CARDS_URL = './cards/cards.json';
   const cloudConfig = window.ZHIDIAN_SUPABASE_CONFIG || {};
   let supabase = null;
   let supabaseLoadPromise = null;
@@ -148,53 +147,6 @@
       cards: normalizedCards,
       tags: [...new Set([...importedTags, ...normalizedCards.map(card => card.tag.trim()).filter(Boolean)])]
     };
-  }
-  async function fetchPublishedDataset() {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-    try {
-      const response = await fetch(`${PUBLISHED_CARDS_URL}?v=${Date.now()}`, { cache: 'no-store', signal: controller.signal });
-      if (!response.ok) throw new Error(`读取 GitHub 卡片失败（${response.status}）`);
-      return normalizeCardDataset(await response.json());
-    } finally { clearTimeout(timeout); }
-  }
-  async function initializePublishedCards() {
-    if (localStorage.getItem(storageKey(STORE_KEY))) {
-      setStorageNote('本机卡片 · 登录后同步到云端');
-      return;
-    }
-    try {
-      const dataset = await fetchPublishedDataset();
-      if (localStorage.getItem(storageKey(STORE_KEY))) return;
-      cards = dataset.cards;
-      customTags = dataset.tags;
-      saveCards(); saveTags();
-      setStorageNote('已载入 GitHub 卡片');
-      render();
-    } catch (error) {
-      setStorageNote('暂时无法载入 GitHub 卡片');
-      console.warn('Could not load published knowledge cards', error);
-    }
-  }
-  async function loadPublishedCards() {
-    if (currentUser) { notify('登录后请使用账号同步，避免用公共版本覆盖云端卡片'); return; }
-    const hasLocalData = localStorage.getItem(storageKey(STORE_KEY)) || localStorage.getItem(storageKey(TAG_STORE_KEY));
-    if (hasLocalData && !confirm('载入 GitHub 版本会替换此浏览器里的卡片和标签。若要保留本机更改，请先导出。继续载入吗？')) return;
-    const button = $('#load-published');
-    button.disabled = true;
-    try {
-      const dataset = await fetchPublishedDataset();
-      cards = dataset.cards;
-      customTags = dataset.tags;
-      saveCards(); saveTags();
-      setStorageNote('已载入 GitHub 版本');
-      render();
-      notify(`已从 GitHub 载入 ${cards.length} 张卡片`);
-    } catch (error) {
-      setStorageNote('载入失败 · 本机卡片未更改');
-      notify('无法读取 GitHub 卡片，请检查网络后重试');
-      console.warn('Could not load published knowledge cards', error);
-    } finally { button.disabled = false; }
   }
   function setAccountState(message, isError = false) {
     const state = $('#account-state');
@@ -1048,7 +1000,7 @@
     const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards, tags: customTags }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = 'cards.json'; link.click(); URL.revokeObjectURL(url);
-    setStorageNote('已导出 cards.json · 上传到 dist/cards/ 发布');
+    setStorageNote('已导出 cards.json · 可作为本机备份');
     notify('cards.json 已导出');
   }
   async function importData(file) {
@@ -1126,7 +1078,6 @@
   $('#manage-tags').addEventListener('click', openTagCreator);
   $('#add-tag').addEventListener('click', openTagCreator);
   $('#tag-form').addEventListener('submit', saveTag);
-  $('#load-published').addEventListener('click', loadPublishedCards);
   $('#export-data').addEventListener('click', exportData);
   $('#import-data').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', event => { if (event.target.files?.[0]) importData(event.target.files[0]); });
@@ -1158,6 +1109,5 @@
     }
   });
   render();
-  initializePublishedCards();
   initializeCloudAuth();
 })();

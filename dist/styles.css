@@ -12,3 +12,5 @@
 .sidebar-close{display:none}
 .sidebar-brand-row{display:flex;align-items:center;gap:4px;margin:1px 0 39px 9px}.sidebar-brand-row .brand{margin:0}
 @media(max-width:640px){.sidebar-brand-row .sidebar-close{display:grid;position:static;z-index:auto;flex:none;width:30px;height:30px;margin:0 0 0 2px;font-size:20px}.sidebar-scrim{position:fixed;inset:0;z-index:4;display:block;width:100%;height:100%;border:0;padding:0;background:rgba(31,38,31,.24);touch-action:manipulation}}
+
+@media(max-width:640px){#account-modal{display:flex;align-items:flex-end;justify-content:center;width:100vw;max-width:100vw;padding:10px;overflow-x:hidden}#account-modal .account-modal{flex:0 1 auto;width:calc(100vw - 20px);max-width:430px;min-width:0}#account-modal .form-field,#account-modal .account-actions{width:100%;min-width:0}#account-modal .form-field input{width:100%;min-width:0;max-width:100%;font-size:16px}#account-modal .account-actions .button{flex:1 1 0;min-width:0}}

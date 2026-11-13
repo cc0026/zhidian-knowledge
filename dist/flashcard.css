@@ -1184,7 +1184,7 @@ body { font-size: var(--type-body); }
 
 @media (max-width: 640px) {
   .app-shell { overflow-x: clip; }
-  .topbar { justify-content: flex-start; gap: 7px; padding: 0 10px; }
+  .topbar { position: sticky; top: 0; z-index: 3; background: var(--paper); justify-content: flex-start; gap: 7px; padding: 0 10px; }
   .breadcrumb { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
   .breadcrumb strong { overflow: hidden; text-overflow: ellipsis; }
   .top-actions { flex: none; gap: 6px; }

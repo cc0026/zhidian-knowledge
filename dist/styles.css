@@ -8,3 +8,6 @@
 
 .account-modal{width:min(100%,430px)}.account-modal h2{font-size:20px;margin:7px 0 0}.account-description,.account-footnote{font-size:11px;line-height:1.7;color:#83877c}.account-state{padding:10px 12px;margin:16px 0;border:1px solid #e2e5db;border-radius:6px;background:#f2f4ee;color:#62745b;font-size:11px;overflow-wrap:anywhere}.account-state[data-error="true"]{background:#f8eeea;border-color:#ecd6cb;color:#a35f4a}.account-actions{display:flex;align-items:center;gap:8px}.account-actions .button{flex:1}.account-cloud-actions{margin-top:14px}.account-footnote{font-size:10px;margin:16px 0 0;color:#999b91}.account-modal .form-field{margin-bottom:12px}.account-modal .form-field input{font-size:13px}.account-modal .modal-topline{margin-bottom:4px}
 @media(max-width:640px){.account-modal{width:100%;padding:22px 20px}.account-actions{gap:7px}.account-actions .button{padding:0 9px}}
+
+.sidebar-close{display:none}
+@media(max-width:640px){.sidebar-close{display:grid;position:absolute;top:17px;right:12px;z-index:1;width:34px;height:34px;font-size:22px}.sidebar-scrim{position:fixed;inset:0;z-index:4;display:block;width:100%;height:100%;border:0;padding:0;background:rgba(31,38,31,.24);touch-action:manipulation}}

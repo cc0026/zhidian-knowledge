@@ -27,6 +27,15 @@
   let cloudSyncDeclined = false;
   let declinedLocalImport = null;
   const storageKey = key => storageScope ? `${key}.user.${storageScope}` : key;
+  function setSidebarOpen(isOpen) {
+    const sidebar = $('#sidebar');
+    const wasOpen = sidebar.classList.contains('open');
+    sidebar.classList.toggle('open', isOpen);
+    $('#sidebar-scrim').hidden = !isOpen;
+    $('#mobile-menu').setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) $('#sidebar-close').focus();
+    else if (wasOpen && innerWidth <= 640) $('#mobile-menu').focus();
+  }
   let cards = loadCards();
   let customTags = loadTags();
   let expandedTags = new Set();
@@ -454,7 +463,7 @@
     selectedMastery = 'all';
     $$('.filter-tab').forEach(tab => tab.classList.toggle('selected', tab.dataset.mastery === 'all'));
     render();
-    if (innerWidth <= 640) $('#sidebar').classList.remove('open');
+    if (innerWidth <= 640) setSidebarOpen(false);
   }
   function renderTags() {
     const host = $('#tag-list');
@@ -1025,7 +1034,9 @@
   $('#export-data').addEventListener('click', exportData);
   $('#import-data').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', event => { if (event.target.files?.[0]) importData(event.target.files[0]); });
-  $('#mobile-menu').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+  $('#mobile-menu').addEventListener('click', () => setSidebarOpen(!$('#sidebar').classList.contains('open')));
+  $('#sidebar-close').addEventListener('click', () => setSidebarOpen(false));
+  $('#sidebar-scrim').addEventListener('click', () => setSidebarOpen(false));
   document.addEventListener('keydown', event => {
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !$('#editor-modal').hidden && event.target === $('#back-input')) {
       const key = event.key.toLowerCase();
@@ -1047,7 +1058,7 @@
       if (!$('#graph-modal').hidden) closeModal($('#graph-modal'));
       else if (!$('#related-modal').hidden) closeModal($('#related-modal'));
       else $$('.modal-backdrop').forEach(modal => { if (!modal.hidden) closeModal(modal); });
-      $('#sidebar').classList.remove('open');
+      setSidebarOpen(false);
     }
   });
   render();

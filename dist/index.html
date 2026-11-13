@@ -27,6 +27,7 @@
           <span class="brand-mark"><span></span><span></span><span></span></span>
           <span>知点<span class="brand-dot">.</span></span>
         </a>
+        <button class="sidebar-close icon-button" id="sidebar-close" type="button" aria-label="关闭侧栏">×</button>
         <div class="workspace-label">PERSONAL KNOWLEDGE</div>
         <nav class="primary-nav" aria-label="主导航">
           <button class="nav-item active" data-view="all"><span class="nav-icon icon-grid">▦</span><span>所有卡片</span><span class="nav-count" id="nav-total">0</span></button>
@@ -49,10 +50,11 @@
           <div class="sidebar-footer"><span class="footer-sigil">知</span><span>一点一点，连成所知</span></div>
         </div>
       </aside>
+      <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭侧栏" hidden></button>
 
       <main class="main-area">
         <header class="topbar">
-          <button class="mobile-menu icon-button" id="mobile-menu" aria-label="打开导航">☰</button>
+          <button class="mobile-menu icon-button" id="mobile-menu" aria-label="打开导航" aria-expanded="false" aria-controls="sidebar">☰</button>
           <div class="breadcrumb"><span>知识空间</span><span class="crumb-slash">/</span><strong id="breadcrumb-current">所有卡片</strong></div>
           <div class="top-actions">
             <label class="search-box" for="search-input"><span class="search-icon">⌕</span><input id="search-input" type="search" placeholder="搜索概念、解释、标签…" autocomplete="off" /><kbd>⌘ K</kbd></label>

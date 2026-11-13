@@ -79,6 +79,7 @@
   let selectedLinks = new Set();
   let newestFirst = true;
   let toastTimer;
+  let modalScrollLockY = null;
   let roamHistory = [];
   let roamHistoryIndex = -1;
 
@@ -585,8 +586,30 @@
     renderCards(); syncNav();
     if (!$('#detail-modal').hidden && activeCardId) syncCardNavigation(activeCardId);
   }
-  function openModal(element) { element.hidden = false; document.body.style.overflow = 'hidden'; }
-  function closeModal(element) { element.hidden = true; if ($('#detail-modal').hidden && $('#related-modal').hidden && $('#editor-modal').hidden && $('#tag-modal').hidden && $('#graph-modal').hidden) document.body.style.overflow = ''; }
+  function openModal(element) {
+    element.hidden = false;
+    if (modalScrollLockY === null) {
+      modalScrollLockY = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      if (innerWidth <= 640) {
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${modalScrollLockY}px`;
+        document.body.style.width = '100%';
+      }
+    }
+  }
+  function closeModal(element) {
+    element.hidden = true;
+    if ($$('.modal-backdrop').every(modal => modal.hidden) && modalScrollLockY !== null) {
+      const scrollY = modalScrollLockY;
+      modalScrollLockY = null;
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      window.scrollTo(0, scrollY);
+    }
+  }
   function renderAnswerMarkup(source = '') {
     const lines = String(source).replace(/\r\n?/g, '\n').split('\n');
     const blocks = [];

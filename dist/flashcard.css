@@ -1274,3 +1274,22 @@ body { font-size: var(--type-body); }
 .flashcard-shell .flashcard-bottom-row .flip-card-button,
 .flashcard-shell .flashcard-bottom-row .flip-card-button span,
 .flashcard-shell .detail-card-actions .text-button { font-size: 14px; }
+
+@media (max-width: 640px) {
+  .flashcard-shell .flashcard-bottom-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 5px;
+  }
+  .flashcard-shell .flashcard-bottom-row > .mastery-options { justify-self: start; }
+  .flashcard-shell .flashcard-bottom-row > .related-toggle { justify-self: center; }
+  .flashcard-shell .flashcard-bottom-row > .flip-card-button { justify-self: end; margin-left: 0; }
+}
+
+@media (max-width: 380px) {
+  .flashcard-shell .flashcard-bottom-row { grid-template-columns: max-content minmax(0, 1fr); }
+  .flashcard-shell .flashcard-bottom-row > .mastery-options { grid-column: 1; grid-row: 1; }
+  .flashcard-shell .flashcard-bottom-row > .flip-card-button { grid-column: 2; grid-row: 1; }
+  .flashcard-shell .flashcard-bottom-row > .related-toggle { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
+}
